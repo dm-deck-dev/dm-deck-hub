@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 秘密鍵・Excel・仮想環境を除外
+scripts/import_to_supabase.py
+scripts/*.xlsx
+scripts/.venv
+.env*
