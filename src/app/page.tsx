@@ -378,15 +378,12 @@ export default function DMApp() {
       try {
         if (!hasValidCache) setIsSyncingAll(true);
 
-        const [countRes, firstPageRes] = await Promise.all([
-          supabase.from('cards').select('*', { count: 'exact', head: true }),
-          supabase
-            .from('cards')
-            .select('*')
-            .order('sort_order', { ascending: false, nullsFirst: false })
-            .order('id', { ascending: true })
-            .range(0, CARDS_PER_PAGE - 1),
-        ]);
+        const firstPageRes = await supabase
+          .from("cards")
+          .select("*")
+          .order("sort_order", { ascending: false, nullsFirst: false })
+          .order("id", { ascending: true })
+          .range(0, CARDS_PER_PAGE - 1);
 
         if (firstPageRes.error) throw firstPageRes.error;
         if (isCancelled) return;
@@ -397,28 +394,26 @@ export default function DMApp() {
           setLoading(false);
         }
 
-        const totalCount = countRes.count || firstBatch.length;
         const step = 1000;
-        const pagePromises = [];
-
-        for (let from = 0; from < totalCount; from += step) {
-          pagePromises.push(
-            supabase
-              .from('cards')
-              .select('*')
-              .order('sort_order', { ascending: false, nullsFirst: false })
-              .order('id', { ascending: true })
-              .range(from, from + step - 1)
-          );
-        }
-
-        const results = await Promise.all(pagePromises);
-        if (isCancelled) return;
-
         let allCards: Card[] = [];
-        for (const res of results) {
-          if (res.error) throw res.error;
-          if (res.data) allCards = allCards.concat(res.data);
+        let from = 0;
+
+        while (true) {
+          const { data, error } = await supabase
+            .from("cards")
+            .select("*")
+            .order("sort_order", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: true })
+            .range(from, from + step - 1);
+
+          if (error) throw error;
+          if (isCancelled) return;
+          if (!data || data.length === 0) break;
+
+          allCards = allCards.concat(data);
+          setCards([...allCards]);
+          if (data.length < step) break;
+          from += step;
         }
 
         if (allCards.length > 0) {
