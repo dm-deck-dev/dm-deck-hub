@@ -244,7 +244,7 @@ export default function DMApp() {
         .maybeSingle();
 
       if (!profile) {
-        const defaultName = currentUser.email ? currentUser.email.split('@')[0] : 'プレイヤー';
+        const defaultName = (currentUser.user_metadata?.display_name as string)?.trim() || (currentUser.email ? currentUser.email.split('@')[0] : 'プレイヤー');
         const { data: inserted, error: insertErr } = await supabase
           .from('profiles')
           .insert({
