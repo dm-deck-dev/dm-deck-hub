@@ -88,16 +88,24 @@ interface FriendshipItem {
   isIncoming: boolean;
 }
 
+interface TradeCardEntry {
+  card_id: string;
+  count: number;
+}
+
 interface TradeRequestItem {
   id: string;
   sender_id: string;
   receiver_id: string;
-  offered_card_id: string;
+  offered_card_id: string | null;
   offered_count: number;
   requested_card_id: string;
   requested_count: number;
+  requested_items?: TradeCardEntry[];
+  offered_items?: TradeCardEntry[];
   message: string | null;
-  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  counter_message?: string | null;
+  status: 'pending' | 'countered' | 'accepted' | 'rejected' | 'cancelled';
   created_at: string;
   sender?: UserProfile;
   receiver?: UserProfile;
@@ -137,14 +145,21 @@ export default function DMApp() {
   const [loadingFriendCards, setLoadingFriendCards] = useState(false);
   const [friendOnlyUnownedByMe, setFriendOnlyUnownedByMe] = useState(false);
 
-  // トレード申請モーダルステート
+  // トレード申請モーダルステート（複数種・複数枚選択対応）
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
-  const [tradeOfferedCardId, setTradeOfferedCardId] = useState<string>('');
-  const [tradeOfferedCount, setTradeOfferedCount] = useState<number>(1);
-  const [tradeRequestedCardId, setTradeRequestedCardId] = useState<string>('');
-  const [tradeRequestedCount, setTradeRequestedCount] = useState<number>(1);
+  const [tradeRequestedSelections, setTradeRequestedSelections] = useState<Record<string, number>>({});
+  const [tradeModalSearch, setTradeModalSearch] = useState<string>('');
   const [tradeNote, setTradeNote] = useState<string>('');
   const [submittingTrade, setSubmittingTrade] = useState(false);
+
+  // 申請先（受信側）による相手資産確認＆返答オファーモーダルステート
+  const [counterTradeTarget, setCounterTradeTarget] = useState<TradeRequestItem | null>(null);
+  const [senderAssetCounts, setSenderAssetCounts] = useState<Record<string, number>>({});
+  const [loadingSenderAssets, setLoadingSenderAssets] = useState(false);
+  const [counterOfferedSelections, setCounterOfferedSelections] = useState<Record<string, number>>({});
+  const [counterModalSearch, setCounterModalSearch] = useState<string>('');
+  const [counterNote, setCounterNote] = useState<string>('');
+  const [submittingCounter, setSubmittingCounter] = useState(false);
 
   // マイデッキ一覧モーダル
   const [isDeckListOpen, setIsDeckListOpen] = useState(false);
@@ -556,26 +571,17 @@ export default function DMApp() {
 
   const openTradeModal = (preselectedRequestedCardId?: string) => {
     if (!selectedFriend) return;
-    const myOwnedIds = Object.keys(counts).filter((id) => (counts[id] || 0) > 0);
     const friendOwnedIds = Object.keys(friendCardCounts).filter((id) => (friendCardCounts[id] || 0) > 0);
-
-    if (myOwnedIds.length === 0) {
-      setFriendMessage({ text: 'トレードに出せる自分の所持カードがありません。先に「資産管理」で所持枚数を登録してください。', type: 'error' });
-      return;
-    }
     if (friendOwnedIds.length === 0) {
       setFriendMessage({ text: '相手が所持しているカードがありません。', type: 'error' });
       return;
     }
-
-    setTradeOfferedCardId(myOwnedIds[0]);
-    setTradeOfferedCount(1);
-    setTradeRequestedCardId(
-      preselectedRequestedCardId && friendOwnedIds.includes(preselectedRequestedCardId)
-        ? preselectedRequestedCardId
-        : friendOwnedIds[0]
-    );
-    setTradeRequestedCount(1);
+    const initialSelections: Record<string, number> = {};
+    if (preselectedRequestedCardId && friendOwnedIds.includes(preselectedRequestedCardId)) {
+      initialSelections[preselectedRequestedCardId] = 1;
+    }
+    setTradeRequestedSelections(initialSelections);
+    setTradeModalSearch('');
     setTradeNote('');
     setIsTradeModalOpen(true);
   };
@@ -583,26 +589,34 @@ export default function DMApp() {
   const handleSubmitTradeRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !selectedFriend) return;
-    if (!tradeOfferedCardId || !tradeRequestedCardId) return;
+    const items: TradeCardEntry[] = Object.entries(tradeRequestedSelections)
+      .filter(([, cnt]) => cnt > 0)
+      .map(([card_id, count]) => ({ card_id, count }));
+
+    if (items.length === 0) {
+      setFriendMessage({ text: 'ほしいカードを1枚以上選択してください。', type: 'error' });
+      return;
+    }
 
     try {
       setSubmittingTrade(true);
+      const firstItem = items[0];
       const { error } = await supabase.from('trade_requests').insert({
         sender_id: user.id,
         receiver_id: selectedFriend.id,
-        offered_card_id: tradeOfferedCardId,
-        offered_count: tradeOfferedCount,
-        requested_card_id: tradeRequestedCardId,
-        requested_count: tradeRequestedCount,
+        offered_card_id: null,
+        offered_count: 0,
+        requested_card_id: firstItem.card_id,
+        requested_count: firstItem.count,
+        requested_items: items,
+        offered_items: [],
         message: tradeNote.trim() || null,
         status: 'pending',
       });
-
       if (error) throw error;
-
       setIsTradeModalOpen(false);
       setFriendMessage({
-        text: `${selectedFriend.display_name || selectedFriend.email} にトレード申請を送信しました！`,
+        text: `${selectedFriend.display_name || selectedFriend.email} にほしいカードのリクエストを送信しました！相手の返答をお待ちください。`,
         type: 'success',
       });
       await loadSocialData(user);
@@ -613,16 +627,76 @@ export default function DMApp() {
     }
   };
 
+  const openCounterOfferModal = async (tr: TradeRequestItem) => {
+    setCounterTradeTarget(tr);
+    setCounterOfferedSelections({});
+    setCounterModalSearch('');
+    setCounterNote('');
+    setLoadingSenderAssets(true);
+    try {
+      const { data, error } = await supabase
+        .from('user_cards')
+        .select('card_id, count')
+        .eq('user_id', tr.sender_id)
+        .gt('count', 0);
+      if (error) throw error;
+      const map: Record<string, number> = {};
+      (data || []).forEach((r) => {
+        map[r.card_id] = r.count;
+      });
+      setSenderAssetCounts(map);
+    } catch {
+      setFriendMessage({ text: '申請元の所持カード取得に失敗しました。', type: 'error' });
+    } finally {
+      setLoadingSenderAssets(false);
+    }
+  };
+
+  const handleSubmitCounterOffer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !counterTradeTarget) return;
+    const offeredItems: TradeCardEntry[] = Object.entries(counterOfferedSelections)
+      .filter(([, cnt]) => cnt > 0)
+      .map(([card_id, count]) => ({ card_id, count }));
+
+    try {
+      setSubmittingCounter(true);
+      const firstOffer = offeredItems[0] || null;
+      const { error } = await supabase
+        .from('trade_requests')
+        .update({
+          offered_card_id: firstOffer ? firstOffer.card_id : null,
+          offered_count: firstOffer ? firstOffer.count : 0,
+          offered_items: offeredItems,
+          counter_message: counterNote.trim() || null,
+          status: 'countered',
+        })
+        .eq('id', counterTradeTarget.id);
+      if (error) throw error;
+      setCounterTradeTarget(null);
+      setFriendMessage({
+        text: offeredItems.length > 0
+          ? '見返りにほしいカードを連絡しました！申請元の合意をお待ちください。'
+          : '見返りなし（無記載）で返答を送信しました！申請元の合意をお待ちください。',
+        type: 'success',
+      });
+      await loadSocialData(user);
+    } catch (err: any) {
+      setFriendMessage({ text: err.message || '返答の送信に失敗しました。', type: 'error' });
+    } finally {
+      setSubmittingCounter(false);
+    }
+  };
+
   const handleRespondTradeRequest = async (tradeId: string, action: 'accept' | 'reject' | 'cancel') => {
     if (!user) return;
     try {
       setFriendLoading(true);
       setFriendMessage(null);
-
       if (action === 'accept') {
         const { error } = await supabase.rpc('accept_trade_request', { trade_id: tradeId });
         if (error) throw error;
-        setFriendMessage({ text: '🎉 トレードが成立しました！双方の所持カード枚数が更新されました。', type: 'success' });
+        setFriendMessage({ text: '🎉 トレードに合意し成立しました！双方の所持カード枚数が更新されました。', type: 'success' });
         await loadUserCardCounts(user.id);
         if (selectedFriend) await handleSelectFriend(selectedFriend);
       } else {
@@ -633,11 +707,10 @@ export default function DMApp() {
           .eq('id', tradeId);
         if (error) throw error;
         setFriendMessage({
-          text: action === 'reject' ? 'トレード申請を拒否しました。' : 'トレード申請を取り消しました。',
+          text: action === 'reject' ? 'トレード申請を辞退しました。' : 'トレード申請を取り消しました。',
           type: 'success',
         });
       }
-
       await loadSocialData(user);
     } catch (err: any) {
       setFriendMessage({ text: err.message || 'トレード処理に失敗しました。', type: 'error' });
@@ -648,8 +721,12 @@ export default function DMApp() {
 
   const pendingNotificationCount = useMemo(() => {
     const incomingFriends = friendships.filter((f) => f.status === 'pending' && f.isIncoming).length;
-    const incomingTrades = tradeRequests.filter((t) => t.status === 'pending' && t.receiver_id === user?.id).length;
-    return incomingFriends + incomingTrades;
+    const actionRequiredTrades = tradeRequests.filter(
+      (t) =>
+        (t.status === 'pending' && t.receiver_id === user?.id) ||
+        (t.status === 'countered' && t.sender_id === user?.id)
+    ).length;
+    return incomingFriends + actionRequiredTrades;
   }, [friendships, tradeRequests, user]);
 
   const displayedFriendCards = useMemo(() => {
@@ -1207,113 +1284,287 @@ export default function DMApp() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 pb-12">
-      {/* ---------------- トレード申請モーダル ---------------- */}
+      {/* ---------------- トレード申請モーダル（1段階目） ---------------- */}
       {isTradeModalOpen && selectedFriend && (
         <div
           className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 cursor-default"
           onClick={() => setIsTradeModalOpen(false)}
         >
           <div
-            className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-4"
+            className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative space-y-4 max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-3 border-b">
+            <div className="flex items-center justify-between pb-3 border-b shrink-0">
               <div className="flex items-center gap-2">
                 <ArrowLeftRight className="h-5 w-5 text-blue-600" />
-                <h3 className="font-black text-base text-slate-800">
-                  {selectedFriend.display_name || selectedFriend.email} へトレード申請
-                </h3>
+                <div>
+                  <h3 className="font-black text-base text-slate-800">
+                    {selectedFriend.display_name || selectedFriend.email} へトレード申請
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    ほしいカードと枚数を選択して送信してください（見返りは相手があなたの資産を見て連絡します）
+                  </p>
+                </div>
               </div>
               <button type="button" onClick={() => setIsTradeModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitTradeRequest} className="space-y-4">
-              <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-2">
-                <span className="text-xs font-black text-blue-900 block">1. あなたが提供するカード</span>
-                <div className="flex gap-2">
-                  <select
-                    value={tradeOfferedCardId}
-                    onChange={(e) => {
-                      setTradeOfferedCardId(e.target.value);
-                      setTradeOfferedCount(1);
-                    }}
-                    className="flex-1 px-3 py-2 rounded-xl border border-blue-200 bg-white text-xs font-bold"
-                  >
-                    {cards
-                      .filter((c) => (counts[c.id] || 0) > 0)
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}（所持: {counts[c.id]}枚）
-                        </option>
-                      ))}
-                  </select>
-                  <select
-                    value={tradeOfferedCount}
-                    onChange={(e) => setTradeOfferedCount(Number(e.target.value))}
-                    className="w-20 px-2 py-2 rounded-xl border border-blue-200 bg-white text-xs font-black"
-                  >
-                    {Array.from({ length: Math.max(1, counts[tradeOfferedCardId] || 1) }, (_, i) => i + 1).map((num) => (
-                      <option key={num} value={num}>
-                        {num}枚
-                      </option>
-                    ))}
-                  </select>
+            <form onSubmit={handleSubmitTradeRequest} className="space-y-4 flex-1 flex flex-col overflow-hidden">
+              <div className="shrink-0">
+                <input
+                  type="text"
+                  value={tradeModalSearch}
+                  onChange={(e) => setTradeModalSearch(e.target.value)}
+                  placeholder="相手の所持カード名で絞り込み..."
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs"
+                />
+              </div>
+
+              <div className="flex-1 overflow-y-auto border border-emerald-200 rounded-2xl bg-emerald-50/40 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-emerald-900">
+                    相手の所持カードからほしいカードを選択（複数種・複数枚可）
+                  </span>
+                  <span className="text-xs font-black text-emerald-700">
+                    選択合計: {Object.values(tradeRequestedSelections).reduce((a, b) => a + b, 0)} 枚
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {cards
+                    .filter((c) => (friendCardCounts[c.id] || 0) > 0)
+                    .filter((c) => !tradeModalSearch.trim() || c.name.toLowerCase().includes(tradeModalSearch.trim().toLowerCase()))
+                    .map((c) => {
+                      const maxAvail = friendCardCounts[c.id] || 0;
+                      const selectedCnt = tradeRequestedSelections[c.id] || 0;
+                      return (
+                        <div
+                          key={c.id}
+                          className={`p-2 rounded-xl border flex items-center justify-between gap-2 transition ${
+                            selectedCnt > 0 ? 'bg-emerald-100/80 border-emerald-400' : 'bg-white border-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {c.image_url && (
+                              <img src={c.image_url} alt={c.name} className="w-8 h-11 object-cover rounded shrink-0" />
+                            )}
+                            <div className="min-w-0">
+                              <p className="font-bold text-xs text-slate-800 truncate">{c.name}</p>
+                              <p className="text-[10px] text-slate-500">相手所持: {maxAvail}枚 / 自分所持: {counts[c.id] || 0}枚</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTradeRequestedSelections((prev) => ({
+                                  ...prev,
+                                  [c.id]: Math.max(0, (prev[c.id] || 0) - 1),
+                                }))
+                              }
+                              disabled={selectedCnt === 0}
+                              className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 font-black text-xs cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <span className="w-8 text-center font-black text-xs text-emerald-800">{selectedCnt}枚</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTradeRequestedSelections((prev) => ({
+                                  ...prev,
+                                  [c.id]: Math.min(maxAvail, (prev[c.id] || 0) + 1),
+                                }))
+                              }
+                              disabled={selectedCnt >= maxAvail}
+                              className="w-7 h-7 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-black text-xs cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2">
-                <span className="text-xs font-black text-emerald-900 block">2. フレンドから受け取りたいカード</span>
-                <div className="flex gap-2">
-                  <select
-                    value={tradeRequestedCardId}
-                    onChange={(e) => {
-                      setTradeRequestedCardId(e.target.value);
-                      setTradeRequestedCount(1);
-                    }}
-                    className="flex-1 px-3 py-2 rounded-xl border border-emerald-200 bg-white text-xs font-bold"
-                  >
-                    {cards
-                      .filter((c) => (friendCardCounts[c.id] || 0) > 0)
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}（相手所持: {friendCardCounts[c.id]}枚）
-                        </option>
-                      ))}
-                  </select>
-                  <select
-                    value={tradeRequestedCount}
-                    onChange={(e) => setTradeRequestedCount(Number(e.target.value))}
-                    className="w-20 px-2 py-2 rounded-xl border border-emerald-200 bg-white text-xs font-black"
-                  >
-                    {Array.from({ length: Math.max(1, friendCardCounts[tradeRequestedCardId] || 1) }, (_, i) => i + 1).map((num) => (
-                      <option key={num} value={num}>
-                        {num}枚
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-1">
+              <div className="space-y-1 shrink-0">
                 <label className="text-xs font-bold text-slate-600 block">メッセージ（任意）</label>
                 <input
                   type="text"
                   value={tradeNote}
                   onChange={(e) => setTradeNote(e.target.value)}
-                  placeholder="例：よかったら交換お願いします！"
+                  placeholder="例：こちらのカードを探しています！こちらの資産から希望があれば教えてください"
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs"
                 />
               </div>
 
               <button
                 type="submit"
-                disabled={submittingTrade}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-2xl text-xs transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                disabled={submittingTrade || Object.values(tradeRequestedSelections).reduce((a, b) => a + b, 0) === 0}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-black rounded-2xl text-xs transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
               >
                 {submittingTrade ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                この内容でトレード申請を送信する
+                選択したカード（{Object.values(tradeRequestedSelections).reduce((a, b) => a + b, 0)}枚）で申請を送る
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- 申請先による相手資産確認＆返答オファーモーダル（2段階目） ---------------- */}
+      {counterTradeTarget && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 cursor-default"
+          onClick={() => setCounterTradeTarget(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative space-y-4 max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b shrink-0">
+              <div className="flex items-center gap-2">
+                <ArrowLeftRight className="h-5 w-5 text-indigo-600" />
+                <div>
+                  <h3 className="font-black text-base text-slate-800">
+                    {counterTradeTarget.sender?.display_name || counterTradeTarget.sender?.email} の資産確認＆返答
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    相手の所持カードから見返りにほしいカードを選択して連絡できます（無記載＝0枚でも送信可能）
+                  </p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setCounterTradeTarget(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs space-y-1 shrink-0">
+              <span className="font-black text-amber-900 block">相手が希望しているカード（あなたが渡すカード）：</span>
+              <div className="flex flex-wrap gap-1.5">
+                {(counterTradeTarget.requested_items && counterTradeTarget.requested_items.length > 0
+                  ? counterTradeTarget.requested_items
+                  : [{ card_id: counterTradeTarget.requested_card_id, count: counterTradeTarget.requested_count }]
+                ).map((item, idx) => {
+                  const c = cards.find((card) => card.id === item.card_id);
+                  return (
+                    <span key={idx} className="px-2 py-0.5 rounded-lg bg-white border border-amber-300 font-bold text-amber-950">
+                      {c?.name || item.card_id} ×{item.count}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmitCounterOffer} className="space-y-4 flex-1 flex flex-col overflow-hidden">
+              <div className="shrink-0">
+                <input
+                  type="text"
+                  value={counterModalSearch}
+                  onChange={(e) => setCounterModalSearch(e.target.value)}
+                  placeholder="申請元の所持カード名で絞り込み..."
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs"
+                />
+              </div>
+
+              <div className="flex-1 overflow-y-auto border border-blue-200 rounded-2xl bg-blue-50/40 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-blue-900">
+                    申請元の所持カード一覧（見返りにほしいカードを選択 / 0枚＝無記載も可）
+                  </span>
+                  <span className="text-xs font-black text-blue-700">
+                    選択合計: {Object.values(counterOfferedSelections).reduce((a, b) => a + b, 0)} 枚
+                  </span>
+                </div>
+
+                {loadingSenderAssets ? (
+                  <div className="text-center py-10 text-xs text-slate-400">申請元の資産を読み込み中...</div>
+                ) : Object.keys(senderAssetCounts).length === 0 ? (
+                  <div className="text-center py-10 text-xs text-slate-400">
+                    申請元が登録している所持カードがありません（このまま「無記載」で返答することもできます）。
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {cards
+                      .filter((c) => (senderAssetCounts[c.id] || 0) > 0)
+                      .filter((c) => !counterModalSearch.trim() || c.name.toLowerCase().includes(counterModalSearch.trim().toLowerCase()))
+                      .map((c) => {
+                        const maxAvail = senderAssetCounts[c.id] || 0;
+                        const selectedCnt = counterOfferedSelections[c.id] || 0;
+                        return (
+                          <div
+                            key={c.id}
+                            className={`p-2 rounded-xl border flex items-center justify-between gap-2 transition ${
+                              selectedCnt > 0 ? 'bg-blue-100/80 border-blue-400' : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {c.image_url && (
+                                <img src={c.image_url} alt={c.name} className="w-8 h-11 object-cover rounded shrink-0" />
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-bold text-xs text-slate-800 truncate">{c.name}</p>
+                                <p className="text-[10px] text-slate-500">相手所持: {maxAvail}枚 / 自分所持: {counts[c.id] || 0}枚</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCounterOfferedSelections((prev) => ({
+                                    ...prev,
+                                    [c.id]: Math.max(0, (prev[c.id] || 0) - 1),
+                                  }))
+                                }
+                                disabled={selectedCnt === 0}
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 font-black text-xs cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <span className="w-8 text-center font-black text-xs text-blue-800">{selectedCnt}枚</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCounterOfferedSelections((prev) => ({
+                                    ...prev,
+                                    [c.id]: Math.min(maxAvail, (prev[c.id] || 0) + 1),
+                                  }))
+                                }
+                                disabled={selectedCnt >= maxAvail}
+                                className="w-7 h-7 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-black text-xs cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1 shrink-0">
+                <label className="text-xs font-bold text-slate-600 block">返答メッセージ（任意）</label>
+                <input
+                  type="text"
+                  value={counterNote}
+                  onChange={(e) => setCounterNote(e.target.value)}
+                  placeholder="例：こちらのカードと交換でどうでしょうか？ / 無償で大丈夫です！"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingCounter}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                {submittingCounter ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {Object.values(counterOfferedSelections).reduce((a, b) => a + b, 0) > 0
+                  ? `ほしいカード（${Object.values(counterOfferedSelections).reduce((a, b) => a + b, 0)}枚）を連絡する`
+                  : '見返りなし（無記載）で返答を送信する'}
               </button>
             </form>
           </div>
@@ -2124,78 +2375,126 @@ export default function DMApp() {
                 {tradeRequests.length === 0 ? (
                   <div className="text-center py-6 text-xs text-slate-400">トレード申請の履歴はありません。</div>
                 ) : (
-                  <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
+                  <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
                     {tradeRequests.map((tr) => {
-                      const isIncoming = tr.receiver_id === user?.id;
-                      const offeredCard = cards.find((c) => c.id === tr.offered_card_id);
-                      const requestedCard = cards.find((c) => c.id === tr.requested_card_id);
-                      const partnerName = isIncoming
+                      const isReceiver = tr.receiver_id === user?.id;
+                      const partnerName = isReceiver
                         ? tr.sender?.display_name || tr.sender?.email
                         : tr.receiver?.display_name || tr.receiver?.email;
+
+                      const reqItems: TradeCardEntry[] =
+                        tr.requested_items && tr.requested_items.length > 0
+                          ? tr.requested_items
+                          : tr.requested_card_id
+                          ? [{ card_id: tr.requested_card_id, count: tr.requested_count }]
+                          : [];
+
+                      const offItems: TradeCardEntry[] =
+                        tr.offered_items && tr.offered_items.length > 0
+                          ? tr.offered_items
+                          : tr.offered_card_id && tr.offered_count > 0
+                          ? [{ card_id: tr.offered_card_id, count: tr.offered_count }]
+                          : [];
+
+                      const needsMyAction =
+                        (tr.status === 'pending' && isReceiver) ||
+                        (tr.status === 'countered' && !isReceiver);
 
                       return (
                         <div
                           key={tr.id}
                           className={`p-3 rounded-2xl border text-xs space-y-2 ${
-                            tr.status === 'pending' && isIncoming
-                              ? 'border-indigo-400 bg-indigo-50/50'
+                            needsMyAction
+                              ? 'border-indigo-400 bg-indigo-50/60 shadow-xs'
                               : 'border-slate-200 bg-slate-50/70'
                           }`}
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-slate-700">
-                              {isIncoming ? `📩 ${partnerName} からの提案` : `📤 ${partnerName} への提案`}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-slate-700 truncate">
+                              {isReceiver ? `📩 ${partnerName} からの申請` : `📤 ${partnerName} への申請`}
                             </span>
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
                                 tr.status === 'pending'
                                   ? 'bg-amber-100 text-amber-800'
+                                  : tr.status === 'countered'
+                                  ? 'bg-indigo-100 text-indigo-800'
                                   : tr.status === 'accepted'
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : 'bg-slate-200 text-slate-600'
                               }`}
                             >
                               {tr.status === 'pending'
-                                ? '承認待ち'
+                                ? isReceiver
+                                  ? '資産確認・返答待ち'
+                                  : '相手の確認待ち'
+                                : tr.status === 'countered'
+                                ? isReceiver
+                                  ? '申請元の合意待ち'
+                                  : '条件到着・合意待ち'
                                 : tr.status === 'accepted'
-                                ? 'トレード成立'
+                                ? '合意・トレード成立'
                                 : tr.status === 'rejected'
-                                ? '拒否済'
+                                ? '辞退済'
                                 : '取消済'}
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-11 items-center gap-1 bg-white p-2 rounded-xl border border-slate-100">
-                            <div className="col-span-5 truncate">
+                          <div className="grid grid-cols-11 items-start gap-1.5 bg-white p-2.5 rounded-xl border border-slate-100">
+                            <div className="col-span-5 space-y-0.5">
                               <span className="text-[9px] text-slate-400 block">
-                                {isIncoming ? '相手が出すカード' : 'あなたが出すカード'}
+                                {isReceiver ? '相手が出すカード（あなたの希望）' : 'あなたが出すカード（相手の希望）'}
                               </span>
-                              <span className="font-bold text-[11px] text-blue-700">
-                                {offeredCard?.name || tr.offered_card_id} ×{tr.offered_count}
-                              </span>
+                              {tr.status === 'pending' ? (
+                                <span className="text-[11px] font-bold text-slate-400">未指定（確認後に連絡）</span>
+                              ) : offItems.length === 0 ? (
+                                <span className="text-[11px] font-bold text-slate-500">なし（無記載）</span>
+                              ) : (
+                                offItems.map((item, i) => {
+                                  const c = cards.find((card) => card.id === item.card_id);
+                                  return (
+                                    <span key={i} className="font-bold text-[11px] text-blue-700 block leading-tight">
+                                      • {c?.name || item.card_id} ×{item.count}
+                                    </span>
+                                  );
+                                })
+                              )}
                             </div>
-                            <div className="col-span-1 flex justify-center">
+
+                            <div className="col-span-1 flex justify-center pt-3">
                               <ArrowLeftRight className="h-3.5 w-3.5 text-slate-400" />
                             </div>
-                            <div className="col-span-5 truncate">
+
+                            <div className="col-span-5 space-y-0.5">
                               <span className="text-[9px] text-slate-400 block">
-                                {isIncoming ? 'あなたが渡すカード' : 'あなたが貰うカード'}
+                                {isReceiver ? 'あなたが渡すカード' : 'あなたが貰うカード'}
                               </span>
-                              <span className="font-bold text-[11px] text-emerald-700">
-                                {requestedCard?.name || tr.requested_card_id} ×{tr.requested_count}
-                              </span>
+                              {reqItems.map((item, i) => {
+                                const c = cards.find((card) => card.id === item.card_id);
+                                return (
+                                  <span key={i} className="font-bold text-[11px] text-emerald-700 block leading-tight">
+                                    • {c?.name || item.card_id} ×{item.count}
+                                  </span>
+                                );
+                              })}
                             </div>
                           </div>
 
                           {tr.message && (
                             <p className="text-[11px] text-slate-600 bg-white px-2.5 py-1.5 rounded-lg border border-slate-100">
-                              💬 {tr.message}
+                              💬 申請元: {tr.message}
+                            </p>
+                          )}
+
+                          {tr.counter_message && (
+                            <p className="text-[11px] text-indigo-800 bg-indigo-50/70 px-2.5 py-1.5 rounded-lg border border-indigo-100">
+                              ↩️ 申請先: {tr.counter_message}
                             </p>
                           )}
 
                           {tr.status === 'pending' && (
                             <div className="flex justify-end gap-2 pt-1">
-                              {isIncoming ? (
+                              {isReceiver ? (
                                 <>
                                   <button
                                     type="button"
@@ -2206,10 +2505,10 @@ export default function DMApp() {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleRespondTradeRequest(tr.id, 'accept')}
-                                    className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] cursor-pointer"
+                                    onClick={() => openCounterOfferModal(tr)}
+                                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] cursor-pointer"
                                   >
-                                    承認して交換する
+                                    相手の資産を確認して返答する
                                   </button>
                                 </>
                               ) : (
@@ -2219,6 +2518,37 @@ export default function DMApp() {
                                   className="px-3 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[11px] cursor-pointer"
                                 >
                                   申請を取り消す
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {tr.status === 'countered' && (
+                            <div className="flex justify-end gap-2 pt-1">
+                              {!isReceiver ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRespondTradeRequest(tr.id, 'cancel')}
+                                    className="px-3 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[11px] cursor-pointer"
+                                  >
+                                    見送る（取消）
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRespondTradeRequest(tr.id, 'accept')}
+                                    className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] cursor-pointer shadow-xs"
+                                  >
+                                    この内容に合意して成立させる
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRespondTradeRequest(tr.id, 'reject')}
+                                  className="px-3 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[11px] cursor-pointer"
+                                >
+                                  提案を取り下げる
                                 </button>
                               )}
                             </div>
