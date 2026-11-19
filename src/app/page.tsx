@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import AuthModal from '@/components/AuthModal';
+import SettingsView from '@/components/SettingsView';
 import { Card } from '@/types/card';
 import {
   Search,
@@ -122,7 +123,7 @@ export default function DMApp() {
 
   const cardListTopRef = useRef<HTMLDivElement | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'collection' | 'deck' | 'friends'>('deck');
+  const [activeTab, setActiveTab] = useState<'collection' | 'deck' | 'friends' | 'settings'>('deck');
   const [deckViewMode, setDeckViewMode] = useState<'tiles' | 'list'>('tiles');
 
   const [currentDeckId, setCurrentDeckId] = useState<string | null>(null);
@@ -2109,6 +2110,21 @@ export default function DMApp() {
                   </span>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!user) {
+                    setIsAuthModalOpen(true);
+                    return;
+                  }
+                  setActiveTab('settings');
+                }}
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  activeTab === 'settings' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                設定
+              </button>
             </nav>
           </div>
 
@@ -2151,7 +2167,18 @@ export default function DMApp() {
       </header>
 
       {/* ================ タブ3: フレンド・トレード画面 ================ */}
-      {activeTab === 'friends' ? (
+      {activeTab === 'settings' && user ? (
+        <SettingsView
+          user={user}
+          currentDisplayName={myProfile?.display_name || (user.user_metadata?.display_name as string) || ''}
+          onProfileUpdated={(newName) => {
+            setMyProfile((prev: any) => (prev ? { ...prev, display_name: newName } : { id: user.id, email: user.email, display_name: newName }));
+          }}
+          onLoggedOut={() => {
+            setActiveTab('deck');
+          }}
+        />
+      ) : activeTab === 'friends' ? (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
           {friendMessage && (
             <div
