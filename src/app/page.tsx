@@ -52,7 +52,7 @@ const DEFAULT_CARDS: Card[] = [];
 const MAX_DECK_LIMIT = 60;
 const BASE_DECK_LIMIT = 40;
 const CARDS_PER_PAGE = 50;
-const CARDS_CACHE_KEY = 'dm_deck_hub_cards_cache_v1';
+const CARDS_CACHE_KEY = 'dm_deck_hub_cards_cache_v1_v2';
 const CARDS_CACHE_TTL_MS = 1000 * 60 * 30; // 30分間キャッシュを有効化
 
 type DuelPhase = 'untap' | 'draw' | 'mana' | 'main' | 'battle' | 'end';
@@ -205,6 +205,36 @@ export default function DMApp() {
 
   // 絞り込み条件
   const [searchName, setSearchName] = useState<string>('');
+  const [rubyMatchedNames, setRubyMatchedNames] = useState<Set<string>>(new Set());
+
+  const normalizeSearchText = useCallback((str: string) => {
+    return str
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[\u3041-\u3096]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60))
+      .replace(/[\s・＝=\-‐―ー〜~()（）「」『』]/g, '');
+  }, []);
+
+  useEffect(() => {
+    const q = searchName.trim();
+    if (!q) {
+      setRubyMatchedNames(new Set());
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/ruby-search?q=${encodeURIComponent(q)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.names)) {
+          setRubyMatchedNames(new Set(data.names.map((n: string) => normalizeSearchText(n))));
+        }
+      } catch {
+        // 通信失敗時はローカル検索のみで継続
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchName, normalizeSearchText]);
   const [searchRace, setSearchRace] = useState<string>('');
   const [selectedCardType, setSelectedCardType] = useState<string>('all');
   const [selectedSet, setSelectedSet] = useState<string>('all');
@@ -830,21 +860,13 @@ export default function DMApp() {
     setCurrentPage(1);
   };
 
-  const normalizeSearchText = useCallback((str: string) => {
-    return str
-      .normalize('NFKC')
-      .toLowerCase()
-      .replace(/[\u3041-\u3096]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60))
-      .replace(/[\s・＝=\-‐―ー〜~()（）「」『』]/g, '');
-  }, []);
-
   const filteredCards = useMemo(() => {
     return cards.filter((card) => {
       if (searchName.trim()) {
         const q = normalizeSearchText(searchName.trim());
         const targetName = normalizeSearchText(card.name || '');
         const targetRuby = normalizeSearchText(card.ruby || '');
-        if (!targetName.includes(q) && !targetRuby.includes(q)) return false;
+        if (!targetName.includes(q) && !targetRuby.includes(q) && !rubyMatchedNames.has(targetName)) return false;
       }
       if (searchRace && !(card.race || []).some((r) => r.toLowerCase().includes(searchRace.toLowerCase()))) return false;
       if (selectedCardType !== 'all' && (!card.card_type || !card.card_type.includes(selectedCardType))) return false;
@@ -857,7 +879,7 @@ export default function DMApp() {
       if (onlyOwned && (counts[card.id] || 0) === 0) return false;
       return true;
     });
-  }, [cards, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, normalizeSearchText]);
+  }, [cards, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, normalizeSearchText, rubyMatchedNames]);
 
   // 検索条件が変わったら1ページ目に戻す
   useEffect(() => {
