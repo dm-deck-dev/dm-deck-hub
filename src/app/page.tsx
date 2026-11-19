@@ -2125,7 +2125,7 @@ export default function DMApp() {
                 </button>
                 <span className="text-xs text-slate-600 hidden sm:inline flex items-center gap-1.5 bg-slate-100 py-1.5 px-3 rounded-full font-medium">
                   <UserIcon className="h-3.5 w-3.5 text-slate-500" />
-                  {user.email}
+                  {myProfile?.display_name || (user.user_metadata?.display_name as string) || user.email}
                 </span>
                 <button
                   type="button"
