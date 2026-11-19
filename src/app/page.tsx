@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import AuthModal from '@/components/AuthModal';
 import { Card } from '@/types/card';
 import {
   Search,
@@ -2045,73 +2046,11 @@ export default function DMApp() {
       )}
 
       {/* ---------------- 認証モーダル ---------------- */}
-      {isAuthModalOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setIsAuthModalOpen(false)}
-        >
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
-            <button type="button" onClick={() => setIsAuthModalOpen(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-full">
-              <X className="h-5 w-5" />
-            </button>
-            <h2 className="text-xl font-bold mb-2">{isSignUp ? 'アカウント新規登録' : 'ログイン'}</h2>
-            <p className="text-xs text-slate-500 mb-4">
-              {isSignUp ? 'すでにアカウントをお持ちの方は' : 'アカウントをお持ちでない方は'}
-              <button
-                type="button"
-                onClick={() => setIsSignUp(!isSignUp)}
-                className="text-blue-600 font-bold underline ml-1"
-              >
-                {isSignUp ? 'ログイン' : '新規登録'}
-              </button>
-            </p>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setAuthLoading(true);
-                try {
-                  if (isSignUp) {
-                    const { data, error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
-                    if (error) throw error;
-                    if (data.user) setUser(data.user);
-                  } else {
-                    const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
-                    if (error) throw error;
-                    if (data.user) setUser(data.user);
-                  }
-                  setIsAuthModalOpen(false);
-                } catch (err: any) {
-                  alert(err.message || '認証エラーが発生しました。');
-                } finally {
-                  setAuthLoading(false);
-                }
-              }}
-              className="space-y-4"
-            >
-              <input
-                type="email"
-                required
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full px-3 py-2 border rounded-lg text-sm"
-              />
-              <input
-                type="password"
-                required
-                minLength={6}
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3 py-2 border rounded-lg text-sm"
-              />
-              <button type="submit" disabled={authLoading} className="w-full py-2.5 bg-blue-600 text-white font-medium rounded-lg text-sm">
-                {isSignUp ? '新規登録' : 'ログイン'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={() => {}}
+      />
 
       {/* ---------------- ヘッダー ---------------- */}
       <header className="border-b bg-white px-6 py-3.5 shadow-sm sticky top-0 z-40">
