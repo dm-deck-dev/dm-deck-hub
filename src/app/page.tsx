@@ -830,9 +830,22 @@ export default function DMApp() {
     setCurrentPage(1);
   };
 
+  const normalizeSearchText = useCallback((str: string) => {
+    return str
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[\u3041-\u3096]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60))
+      .replace(/[\s・＝=\-‐―ー〜~()（）「」『』]/g, '');
+  }, []);
+
   const filteredCards = useMemo(() => {
     return cards.filter((card) => {
-      if (searchName && !card.name.toLowerCase().includes(searchName.toLowerCase())) return false;
+      if (searchName.trim()) {
+        const q = normalizeSearchText(searchName.trim());
+        const targetName = normalizeSearchText(card.name || '');
+        const targetRuby = normalizeSearchText(card.ruby || '');
+        if (!targetName.includes(q) && !targetRuby.includes(q)) return false;
+      }
       if (searchRace && !(card.race || []).some((r) => r.toLowerCase().includes(searchRace.toLowerCase()))) return false;
       if (selectedCardType !== 'all' && (!card.card_type || !card.card_type.includes(selectedCardType))) return false;
       if (selectedSet !== 'all' && card.set_name !== selectedSet) return false;
@@ -844,7 +857,7 @@ export default function DMApp() {
       if (onlyOwned && (counts[card.id] || 0) === 0) return false;
       return true;
     });
-  }, [cards, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned]);
+  }, [cards, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, normalizeSearchText]);
 
   // 検索条件が変わったら1ページ目に戻す
   useEffect(() => {

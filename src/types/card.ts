@@ -1,6 +1,7 @@
 export interface Card {
   id: string;
   name: string;
+  ruby?: string | null;
   card_type: string;
   civilization: string[];
   cost: number | null;
