@@ -901,35 +901,44 @@ export default function DMApp() {
 
   // デュエマ歴代シリーズ・発売時期に基づく並び順スコア（数値が大きいほど最新）
   const getSetReleaseScore = useCallback((code: string): number => {
-    const c = code.toUpperCase();
+    const c = code.toUpperCase().trim();
 
-    // 1. 新シリーズ形式: DM26RP1, DM26EX5, DM25RP2, DM24EX1, DM22RP1 など
-    const modernMatch = c.match(/^DM(\d{2})([A-Z]+)?(\d+)?/);
+    // 0. 初期基本編〜覚醒編 (2002〜2011): DM-01〜DM-39 / DM01〜DM39 / DMC-01〜68
+    // ※ DM27〜DM39 が年号(2027〜2039)と誤認されないよう最初に判定
+    const classicMatch = c.match(/^DM(C)?-?(\d{1,2})$/);
+    if (classicMatch) {
+      const isC = Boolean(classicMatch[1]);
+      const num = parseInt(classicMatch[2], 10);
+      const maxRef = isC ? 68 : 39;
+      const approxYear = 2002 + Math.round((num / maxRef) * 8.5);
+      return approxYear * 10000 + num * 10;
+    }
+
+    // 1. 新シリーズ形式 (2022〜2026+): DM26RP1, DM26EX5, DM25RP2, DM24EX1, DM22RP1 など
+    const modernMatch = c.match(/^DM(\d{2})-?(RP|EX|SD|BD|SP|ART|G|S|T)(\d+)?/);
     if (modernMatch) {
-      const year = 2000 + parseInt(modernMatch[1], 10); // 2022〜2026+
-      const subType = modernMatch[2] || "";
-      const num = parseInt(modernMatch[3] || "0", 10);
-      const subOrder: Record<string, number> = {
-        RP: 1,
-        EX: 2,
-        SD: 3,
-        BD: 4,
-        SP: 5,
-        ART: 6,
-      };
-      return year * 10000 + (subOrder[subType] || 0) * 100 + num;
+      const yearNum = parseInt(modernMatch[1], 10);
+      if (yearNum >= 22 && yearNum <= 26) {
+        const year = 2000 + yearNum;
+        const subType = modernMatch[2] || "";
+        const num = parseInt(modernMatch[3] || "0", 10);
+        const subOrder: Record<string, number> = {
+          RP: 1,
+          EX: 2,
+          SD: 3,
+          BD: 4,
+          SP: 5,
+          ART: 6,
+        };
+        return year * 10000 + (subOrder[subType] || 0) * 100 + num;
+      }
     }
 
     // 2. 新章〜王来MAX (2017〜2022): DMRP-01〜22, DMEX-01〜19, DMSD-01〜21, DMBD-01〜22
     const neoMatch = c.match(/^DM(RP|EX|SD|BD)-?(\d+)/);
     if (neoMatch) {
-      const prefix = neoMatch[1];
       const num = parseInt(neoMatch[2], 10);
-      // DMRP-01(2017)〜DMRP-22(2022) を年換算
-      const approxYear =
-        prefix === "RP" ? 2017 + Math.floor((num - 1) / 4) :
-        prefix === "EX" ? 2017 + Math.floor((num - 1) / 4) :
-        2017 + Math.floor((num - 1) / 4);
+      const approxYear = 2017 + Math.floor((num - 1) / 4);
       return approxYear * 10000 + num * 10;
     }
 
@@ -943,17 +952,7 @@ export default function DMApp() {
       return approxYear * 10000 + num * 10;
     }
 
-    // 4. 初期基本編〜覚醒編 (2002〜2011): DM-01〜39, DMC-01〜68
-    const classicMatch = c.match(/^DM(C)?-?(\d+)$/);
-    if (classicMatch) {
-      const isC = Boolean(classicMatch[1]);
-      const num = parseInt(classicMatch[2], 10);
-      const maxRef = isC ? 68 : 39;
-      const approxYear = 2002 + Math.round((num / maxRef) * 8.5);
-      return approxYear * 10000 + num * 10;
-    }
-
-    // 5. プロモ系 (P1/Y24 など)
+    // 4. プロモ系 (P1/Y24 など)
     const promoYearMatch = c.match(/Y(\d{2})/);
     if (promoYearMatch) {
       const y = parseInt(promoYearMatch[1], 10);
