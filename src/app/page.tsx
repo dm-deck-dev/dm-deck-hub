@@ -884,13 +884,22 @@ export default function DMApp() {
     return distribution;
   }, [deckCards, cards]);
 
+  const extractSetCode = useCallback((raw?: string | null) => {
+    if (!raw) return "";
+    const cleaned = raw.trim().replace(/^[（(]+|[）)]+$/g, "").trim();
+    if (!cleaned) return "";
+    const firstToken = cleaned.split(/[\s　/／]+/)[0] || "";
+    return firstToken.replace(/^[（(]+|[）)]+$/g, "").trim();
+  }, []);
+
   const availableSetNames = useMemo(() => {
     const setNames = new Set<string>();
     cards.forEach((c) => {
-      if (c.set_name && c.set_name.trim().length > 0) setNames.add(c.set_name);
+      const code = extractSetCode(c.set_name);
+      if (code) setNames.add(code);
     });
     return Array.from(setNames).sort();
-  }, [cards]);
+  }, [cards, extractSetCode]);
 
   const availableCardTypes = useMemo(() => {
     const types = new Set<string>(['クリーチャー', '呪文', 'クロスギア', '城']);
@@ -934,7 +943,7 @@ export default function DMApp() {
       }
       if (searchRace && !(card.race || []).some((r) => r.toLowerCase().includes(searchRace.toLowerCase()))) return false;
       if (selectedCardType !== 'all' && (!card.card_type || !card.card_type.includes(selectedCardType))) return false;
-      if (selectedSet !== 'all' && card.set_name !== selectedSet) return false;
+      if (selectedSet !== 'all' && extractSetCode(card.set_name) !== selectedSet) return false;
       if (selectedCivilization !== 'all' && !card.civilization.includes(selectedCivilization)) return false;
       if (selectedCost !== 'all') {
         const costNum = parseInt(selectedCost, 10);
@@ -943,7 +952,7 @@ export default function DMApp() {
       if (onlyOwned && (counts[card.id] || 0) === 0) return false;
       return true;
     });
-  }, [cards, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, normalizeSearchText, rubyMatchedNames]);
+  }, [cards, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, normalizeSearchText, rubyMatchedNames, extractSetCode]);
 
   // 検索条件が変わったら1ページ目に戻す（初回マウント時は保存済みページ番号を優先）
   useEffect(() => {
