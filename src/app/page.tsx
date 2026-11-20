@@ -204,8 +204,32 @@ export default function DMApp() {
   const [isDeckListOpen, setIsDeckListOpen] = useState(false);
   const [deckTabScreen, setDeckTabScreen] = useState<'list' | 'editor'>('list');
   const [selectedDeckForAction, setSelectedDeckForAction] = useState<string | null>(null);
-  const [savedDecks, setSavedDecks] = useState<{ id: string; name: string; created_at: string; total_cards: number }[]>([]);
+  const [thumbnailCardId, setThumbnailCardId] = useState<string | null>(null);
+  const [isThumbnailModalOpen, setIsThumbnailModalOpen] = useState<boolean>(false);
+  const [savedDecks, setSavedDecks] = useState<{ id: string; name: string; created_at: string; total_cards: number; thumbnail_card_id?: string | null }[]>([]);
   const [loadingDecks, setLoadingDecks] = useState(false);
+
+  const getLocalDeckThumbs = (): Record<string, string> => {
+    if (typeof window === 'undefined') return {};
+    try {
+      return JSON.parse(localStorage.getItem('dm_deck_hub_deck_thumbs') || '{}');
+    } catch {
+      return {};
+    }
+  };
+
+  const setLocalDeckThumb = (deckId: string, cardId: string | null) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const cur = getLocalDeckThumbs();
+      if (cardId) {
+        cur[deckId] = cardId;
+      } else {
+        delete cur[deckId];
+      }
+      localStorage.setItem('dm_deck_hub_deck_thumbs', JSON.stringify(cur));
+    } catch {}
+  };
 
   // 購入リスト枠の開閉状態
   const [isBuyListOpen, setIsBuyListOpen] = useState(true);
@@ -1015,6 +1039,7 @@ export default function DMApp() {
     setCurrentDeckId(null);
     setDeckName('新規デッキ');
     setDeckCards({});
+    setThumbnailCardId(null);
     setDeckMessage(null);
     setDeckTabScreen('editor');
   };
@@ -1026,19 +1051,32 @@ export default function DMApp() {
     }
     try {
       setLoadingDecks(true);
-      const { data, error } = await supabase
+      const localThumbs = getLocalDeckThumbs();
+      let { data, error } = await supabase
         .from('decks')
-        .select(`id, name, created_at, deck_cards (count)`)
+        .select(`id, name, created_at, thumbnail_card_id, deck_cards (card_id, count)`)
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false });
-      if (error) throw error;
+      if (error) {
+        const fallback = await supabase
+          .from('decks')
+          .select(`id, name, created_at, deck_cards (card_id, count)`)
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: false });
+        if (fallback.error) throw fallback.error;
+        data = fallback.data as any;
+      }
       setSavedDecks(
-        (data || []).map((d: any) => ({
-          id: d.id,
-          name: d.name,
-          created_at: d.created_at,
-          total_cards: (d.deck_cards || []).reduce((acc: number, c: any) => acc + (c.count || 0), 0),
-        }))
+        (data || []).map((d: any) => {
+          const fallbackCardId = d.deck_cards && d.deck_cards.length > 0 ? d.deck_cards[0].card_id : null;
+          return {
+            id: d.id,
+            name: d.name,
+            created_at: d.created_at,
+            total_cards: (d.deck_cards || []).reduce((acc: number, c: any) => acc + (c.count || 0), 0),
+            thumbnail_card_id: d.thumbnail_card_id || localThumbs[d.id] || fallbackCardId,
+          };
+        })
       );
     } catch (err) {
       console.error(err);
@@ -1060,6 +1098,9 @@ export default function DMApp() {
     }
     try {
       setLoadingDecks(true);
+      const sourceDeck = savedDecks.find((d) => d.id === deckId);
+      const sourceThumb = sourceDeck?.thumbnail_card_id || getLocalDeckThumbs()[deckId] || null;
+
       const { data: cardsData, error: cardsError } = await supabase
         .from('deck_cards')
         .select('card_id, count')
@@ -1067,12 +1108,22 @@ export default function DMApp() {
       if (cardsError) throw cardsError;
 
       const copyName = `${originalName} のコピー`;
-      const { data: newDeck, error: insertError } = await supabase
+      let { data: newDeck, error: insertError } = await supabase
         .from('decks')
-        .insert({ user_id: user.id, name: copyName })
+        .insert({ user_id: user.id, name: copyName, thumbnail_card_id: sourceThumb })
         .select()
         .single();
+      if (insertError) {
+        const fallback = await supabase
+          .from('decks')
+          .insert({ user_id: user.id, name: copyName })
+          .select()
+          .single();
+        newDeck = fallback.data;
+        insertError = fallback.error;
+      }
       if (insertError || !newDeck) throw insertError || new Error('デッキの複製に失敗しました。');
+      if (sourceThumb) setLocalDeckThumb(newDeck.id, sourceThumb);
 
       if (cardsData && cardsData.length > 0) {
         const records = cardsData.map((c: any) => ({
@@ -1123,7 +1174,7 @@ export default function DMApp() {
     }
   };
 
-  const saveDeckToDB = async () => {
+  const openThumbnailPickerBeforeSave = () => {
     if (!user) {
       setIsAuthModalOpen(true);
       return;
@@ -1132,17 +1183,52 @@ export default function DMApp() {
       setDeckMessage({ text: 'デッキにカードが1枚も入っていません。', type: 'error' });
       return;
     }
+    const deckCardIds = Object.keys(deckCards);
+    if (!thumbnailCardId || !deckCardIds.includes(thumbnailCardId)) {
+      setThumbnailCardId(deckCardIds[0] || null);
+    }
+    setIsThumbnailModalOpen(true);
+  };
+
+  const saveDeckToDB = async (chosenThumbId?: string | null) => {
+    if (!user) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+    if (totalDeckCardCount === 0) {
+      setDeckMessage({ text: 'デッキにカードが1枚も入っていません。', type: 'error' });
+      return;
+    }
+    const finalThumbId = chosenThumbId !== undefined ? chosenThumbId : thumbnailCardId;
     try {
       setDeckSaving(true);
       let targetDeckId = currentDeckId;
       if (targetDeckId) {
-        await supabase.from('decks').update({ name: deckName, updated_at: new Date().toISOString() }).eq('id', targetDeckId);
+        const { error: updErr } = await supabase
+          .from('decks')
+          .update({ name: deckName, thumbnail_card_id: finalThumbId, updated_at: new Date().toISOString() })
+          .eq('id', targetDeckId);
+        if (updErr) {
+          await supabase.from('decks').update({ name: deckName, updated_at: new Date().toISOString() }).eq('id', targetDeckId);
+        }
         await supabase.from('deck_cards').delete().eq('deck_id', targetDeckId);
       } else {
-        const { data: deck, error } = await supabase.from('decks').insert({ user_id: user.id, name: deckName }).select().single();
-        if (error) throw error;
+        let { data: deck, error } = await supabase
+          .from('decks')
+          .insert({ user_id: user.id, name: deckName, thumbnail_card_id: finalThumbId })
+          .select()
+          .single();
+        if (error) {
+          const fallback = await supabase.from('decks').insert({ user_id: user.id, name: deckName }).select().single();
+          deck = fallback.data;
+          error = fallback.error;
+        }
+        if (error || !deck) throw error;
         targetDeckId = deck.id;
         setCurrentDeckId(deck.id);
+      }
+      if (targetDeckId) {
+        setLocalDeckThumb(targetDeckId, finalThumbId || null);
       }
       const records = Object.entries(deckCards).map(([cardId, count]) => ({
         deck_id: targetDeckId!,
@@ -1150,6 +1236,7 @@ export default function DMApp() {
         count,
       }));
       await supabase.from('deck_cards').insert(records);
+      setIsThumbnailModalOpen(false);
       setDeckMessage({
         text: totalDeckCardCount >= BASE_DECK_LIMIT
           ? `デッキ「${deckName}」を保存しました（${totalDeckCardCount}枚）！`
@@ -1172,11 +1259,16 @@ export default function DMApp() {
   const loadDeckToBuilder = async (deckId: string) => {
     try {
       setLoadingDecks(true);
-      const { data: deckData, error: deckError } = await supabase
+      let { data: deckData, error: deckError } = await supabase
         .from('decks')
-        .select('id, name')
+        .select('id, name, thumbnail_card_id')
         .eq('id', deckId)
         .single();
+      if (deckError) {
+        const fallback = await supabase.from('decks').select('id, name').eq('id', deckId).single();
+        deckData = fallback.data as any;
+        deckError = fallback.error;
+      }
 
       if (deckError || !deckData) {
         throw deckError || new Error('デッキが見つかりませんでした。');
@@ -1197,6 +1289,8 @@ export default function DMApp() {
       setCurrentDeckId(deckData.id);
       setDeckName(deckData.name);
       setDeckCards(cardMap);
+      const restoredThumb = (deckData as any).thumbnail_card_id || getLocalDeckThumbs()[deckData.id] || Object.keys(cardMap)[0] || null;
+      setThumbnailCardId(restoredThumb);
       setIsDeckListOpen(false);
       setDeckTabScreen('editor');
       setActiveTab('deck');
@@ -2162,6 +2256,94 @@ export default function DMApp() {
         </div>
       )}
 
+      {/* ---------------- デッキ保存時のサムネイル選択モーダル ---------------- */}
+      {isThumbnailModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 cursor-default"
+          onClick={() => !deckSaving && setIsThumbnailModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-4 border-b">
+              <div>
+                <h2 className="text-lg font-black text-slate-900">デッキのサムネイルを選択</h2>
+                <p className="text-xs text-slate-500 mt-0.5">マイデッキ一覧に表示するカードを1枚選んで保存してください</p>
+              </div>
+              <button
+                type="button"
+                disabled={deckSaving}
+                onClick={() => setIsThumbnailModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="py-4 overflow-y-auto flex-1">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                {Object.keys(deckCards).map((cardId) => {
+                  const card = cards.find((c) => c.id === cardId);
+                  if (!card) return null;
+                  const isChosen = thumbnailCardId === cardId;
+                  return (
+                    <button
+                      key={cardId}
+                      type="button"
+                      onClick={() => setThumbnailCardId(cardId)}
+                      className={`group relative rounded-xl overflow-hidden border-2 transition text-left cursor-pointer ${
+                        isChosen
+                          ? 'border-blue-600 ring-2 ring-blue-500/30 shadow-md scale-[1.02]'
+                          : 'border-slate-200 hover:border-blue-400'
+                      }`}
+                    >
+                      <div className="aspect-[5/7] bg-slate-100 relative">
+                        {card.image_url ? (
+                          <img src={card.image_url} alt={card.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400 p-1 text-center">
+                            {card.name}
+                          </div>
+                        )}
+                        {isChosen && (
+                          <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow">
+                            <Check className="h-3.5 w-3.5" />
+                          </div>
+                        )}
+                      </div>
+                      <div className={`p-1.5 text-[10px] font-bold truncate ${isChosen ? 'bg-blue-600 text-white' : 'bg-white text-slate-700'}`}>
+                        {card.name}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={deckSaving}
+                onClick={() => setIsThumbnailModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-bold transition cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                disabled={deckSaving}
+                onClick={() => saveDeckToDB(thumbnailCardId)}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer disabled:opacity-50"
+              >
+                {deckSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                このカードで保存する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ---------------- 保存済みデッキ一覧モーダル ---------------- */}
       {isDeckListOpen && (
         <div
@@ -2887,32 +3069,51 @@ export default function DMApp() {
                 {/* 作成済みデッキカード */}
                 {savedDecks.map((deck) => {
                   const isSelected = selectedDeckForAction === deck.id;
+                  const thumbCard = deck.thumbnail_card_id ? cards.find((c) => c.id === deck.thumbnail_card_id) : null;
                   return (
                     <div
                       key={deck.id}
                       onClick={() => setSelectedDeckForAction(isSelected ? null : deck.id)}
-                      className={`p-4 rounded-2xl border transition flex flex-col justify-between min-h-[148px] cursor-pointer ${
+                      className={`p-4 rounded-2xl border transition flex flex-col justify-between min-h-[160px] cursor-pointer ${
                         isSelected
                           ? 'border-blue-600 bg-blue-50/60 ring-2 ring-blue-500/20 shadow-md'
                           : 'border-slate-200 bg-white hover:border-blue-400 hover:shadow-sm'
                       }`}
                     >
-                      <div>
-                        <div className="flex items-start justify-between gap-2">
-                          <h3 className="font-black text-base text-slate-900 line-clamp-2">{deck.name}</h3>
-                          <span
-                            className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                              deck.total_cards >= BASE_DECK_LIMIT
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {deck.total_cards}枚
-                          </span>
+                      <div className="flex items-start gap-3">
+                        <div className="w-14 h-20 rounded-xl bg-slate-100 border border-slate-200/80 overflow-hidden shrink-0 flex items-center justify-center shadow-xs">
+                          {thumbCard?.image_url ? (
+                            <img
+                              src={thumbCard.image_url}
+                              alt={thumbCard.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <DeckIcon className="h-5 w-5 text-slate-300" />
+                          )}
                         </div>
-                        <p className="text-[11px] text-slate-400 mt-1.5">
-                          作成日: {new Date(deck.created_at).toLocaleDateString()}
-                        </p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-1.5">
+                            <h3 className="font-black text-sm text-slate-900 line-clamp-2">{deck.name}</h3>
+                            <span
+                              className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                                deck.total_cards >= BASE_DECK_LIMIT
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {deck.total_cards}枚
+                            </span>
+                          </div>
+                          {thumbCard && (
+                            <p className="text-[11px] text-blue-600/90 font-semibold truncate mt-1">
+                              表紙: {thumbCard.name}
+                            </p>
+                          )}
+                          <p className="text-[11px] text-slate-400 mt-1">
+                            作成日: {new Date(deck.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
                       </div>
 
                       {isSelected ? (
@@ -3518,7 +3719,7 @@ export default function DMApp() {
 
                 <button
                   type="button"
-                  onClick={saveDeckToDB}
+                  onClick={openThumbnailPickerBeforeSave}
                   disabled={deckSaving || totalDeckCardCount === 0}
                   className={`w-full py-2.5 text-white font-bold rounded-2xl text-xs transition shadow-md flex items-center justify-center gap-2 disabled:bg-slate-200 disabled:text-slate-400 cursor-pointer ${
                     totalDeckCardCount >= BASE_DECK_LIMIT ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
