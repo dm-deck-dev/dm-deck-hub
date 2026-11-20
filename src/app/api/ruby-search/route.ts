@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const rubyCache = new Map<string, { names: string[]; ts: number }>();
+const rubyCache = new Map<string, { files: string[]; ts: number }>();
 const CACHE_TTL = 1000 * 60 * 60 * 6; // 6時間
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const rawQ = (searchParams.get('q') || '').trim();
   if (!rawQ) {
-    return NextResponse.json({ names: [] });
+    return NextResponse.json({ files: [] });
   }
 
   // ひらがなをカタカナに正規化して公式APIへ問い合わせ
@@ -17,13 +17,13 @@ export async function GET(request: NextRequest) {
 
   const cached = rubyCache.get(kataQ);
   if (cached && Date.now() - cached.ts < CACHE_TTL) {
-    return NextResponse.json({ names: cached.names });
+    return NextResponse.json({ files: cached.files });
   }
 
   try {
-    const namesSet = new Set<string>();
-    // 最大3ページ（約120件分）のルビ一致カード名を取得
-    for (let page = 1; page <= 3; page++) {
+    const filesSet = new Set<string>();
+    // 最大5ページ（約200件分）のルビ一致カードの画像ファイル名を取得
+    for (let page = 1; page <= 5; page++) {
       const form = new URLSearchParams();
       form.append('pagenum', String(page));
       form.append('keyword', kataQ);
@@ -45,33 +45,24 @@ export async function GET(request: NextRequest) {
       if (!res.ok) break;
       const html = await res.text();
 
-      // imgタグの alt / title やカード名テキストを抽出
-      const altMatches = html.matchAll(/<img[^>]+class="[^"]*cardImage[^"]*"[^>]*>/g);
+      const imgMatches = html.matchAll(/<img[^>]+class=["'][^"']*cardImage[^"']*["'][^>]*>/gi);
       let countOnPage = 0;
-      for (const m of altMatches) {
+      for (const m of imgMatches) {
         countOnPage++;
-        const tag = m[0];
-        const altM = tag.match(/alt="([^"]+)"/);
-        if (altM && altM[1]) {
-          const clean = altM[1].replace(/[\(（][^\)）]*[\)）]$/, '').trim();
-          if (clean) namesSet.add(clean);
+        const srcM = m[0].match(/src=["']([^"']+)["']/i);
+        if (srcM && srcM[1]) {
+          const fname = srcM[1].split('/').pop()?.split('?')[0].toLowerCase();
+          if (fname) filesSet.add(fname);
         }
-      }
-
-      // pタグやspanタグ内のカード名表記も補完抽出
-      const nameMatches = html.matchAll(/<(?:p|span|h3)[^>]*class="[^"]*(?:card-name|name)[^"]*"[^>]*>([^<]+)</g);
-      for (const nm of nameMatches) {
-        const clean = nm[1].replace(/[\(（][^\)）]*[\)）]$/, '').trim();
-        if (clean) namesSet.add(clean);
       }
 
       if (countOnPage < 40) break;
     }
 
-    const names = Array.from(namesSet);
-    rubyCache.set(kataQ, { names, ts: Date.now() });
-    return NextResponse.json({ names });
+    const files = Array.from(filesSet);
+    rubyCache.set(kataQ, { files, ts: Date.now() });
+    return NextResponse.json({ files });
   } catch {
-    return NextResponse.json({ names: [] });
+    return NextResponse.json({ files: [] });
   }
 }

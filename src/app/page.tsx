@@ -226,8 +226,8 @@ export default function DMApp() {
         const res = await fetch(`/api/ruby-search?q=${encodeURIComponent(q)}`);
         if (!res.ok) return;
         const data = await res.json();
-        if (Array.isArray(data.names)) {
-          setRubyMatchedNames(new Set(data.names.map((n: string) => normalizeSearchText(n))));
+        if (Array.isArray(data.files)) {
+          setRubyMatchedNames(new Set(data.files.map((f: string) => f.toLowerCase())));
         }
       } catch {
         // 通信失敗時はローカル検索のみで継続
@@ -866,7 +866,8 @@ export default function DMApp() {
         const q = normalizeSearchText(searchName.trim());
         const targetName = normalizeSearchText(card.name || '');
         const targetRuby = normalizeSearchText(card.ruby || '');
-        if (!targetName.includes(q) && !targetRuby.includes(q) && !rubyMatchedNames.has(targetName)) return false;
+        const imgFile = (card.image_url || '').split('/').pop()?.split('?')[0].toLowerCase() || '';
+        if (!targetName.includes(q) && !targetRuby.includes(q) && !(imgFile && rubyMatchedNames.has(imgFile))) return false;
       }
       if (searchRace && !(card.race || []).some((r) => r.toLowerCase().includes(searchRace.toLowerCase()))) return false;
       if (selectedCardType !== 'all' && (!card.card_type || !card.card_type.includes(selectedCardType))) return false;
