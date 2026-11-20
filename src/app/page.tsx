@@ -52,7 +52,7 @@ const DEFAULT_CARDS: Card[] = [];
 const MAX_DECK_LIMIT = 60;
 const BASE_DECK_LIMIT = 40;
 const CARDS_PER_PAGE = 50;
-const CARDS_CACHE_KEY = 'dm_deck_hub_cards_cache_v1_v2';
+const CARDS_CACHE_KEY = 'dm_deck_hub_cards_cache_v1_v3';
 const CARDS_CACHE_TTL_MS = 1000 * 60 * 30; // 30分間キャッシュを有効化
 
 type DuelPhase = 'untap' | 'draw' | 'mana' | 'main' | 'battle' | 'end';
