@@ -232,7 +232,7 @@ export default function DMApp() {
   };
 
   // 購入リスト枠の開閉状態
-  const [isBuyListOpen, setIsBuyListOpen] = useState(true);
+  const [isBuyListOpen, setIsBuyListOpen] = useState(false);
   const [copiedDeckList, setCopiedDeckList] = useState(false);
 
   // ---------------- 一人回しシミュレーターステート ----------------
