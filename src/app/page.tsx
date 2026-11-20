@@ -1027,6 +1027,14 @@ export default function DMApp() {
             civs.length === 0 ||
             civs.some((c) => ["ゼロ", "零", "無色", "zero"].includes(c.toLowerCase()));
           if (!isZero) return false;
+        } else if (selectedCivilization === 'multicolor') {
+          const civs = (card.civilization || []).filter(
+            (c) => !["ゼロ", "零", "無色", "zero"].includes(c.toLowerCase())
+          );
+          const isMulti =
+            civs.length >= 2 ||
+            (card.civilization || []).some((c) => c.includes("多色") || c.includes("レインボー"));
+          if (!isMulti) return false;
         } else if (!card.civilization.includes(selectedCivilization)) {
           return false;
         }
@@ -3322,6 +3330,7 @@ export default function DMApp() {
                 <option value="火">火文明</option>
                 <option value="自然">自然文明</option>
                 <option value="zero">零文明（無色）</option>
+                <option value="multicolor">多色（レインボー）</option>
               </select>
 
               <select
