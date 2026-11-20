@@ -3168,8 +3168,19 @@ export default function DMApp() {
                   placeholder="カード名..."
                   value={searchName}
                   onChange={(e) => setSearchName(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full pl-9 pr-8 py-1.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
+                {searchName && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchName('')}
+                    title="検索テキストをクリア"
+                    aria-label="検索テキストをクリア"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
 
               <div className="relative min-w-[110px] flex-1 sm:flex-initial">
