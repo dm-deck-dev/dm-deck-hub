@@ -1020,7 +1020,17 @@ export default function DMApp() {
       if (searchRace && !(card.race || []).some((r) => r.toLowerCase().includes(searchRace.toLowerCase()))) return false;
       if (selectedCardType !== 'all' && (!card.card_type || !card.card_type.includes(selectedCardType))) return false;
       if (selectedSet !== 'all' && extractSetCode(card.set_name) !== selectedSet) return false;
-      if (selectedCivilization !== 'all' && !card.civilization.includes(selectedCivilization)) return false;
+      if (selectedCivilization !== 'all') {
+        if (selectedCivilization === 'zero') {
+          const civs = card.civilization || [];
+          const isZero =
+            civs.length === 0 ||
+            civs.some((c) => ["ゼロ", "零", "無色", "zero"].includes(c.toLowerCase()));
+          if (!isZero) return false;
+        } else if (!card.civilization.includes(selectedCivilization)) {
+          return false;
+        }
+      }
       if (selectedCost !== 'all') {
         const costNum = parseInt(selectedCost, 10);
         if (costNum === 10 ? (card.cost || 0) < 10 : card.cost !== costNum) return false;
@@ -3311,6 +3321,7 @@ export default function DMApp() {
                 <option value="闇">闇文明</option>
                 <option value="火">火文明</option>
                 <option value="自然">自然文明</option>
+                <option value="zero">零文明（無色）</option>
               </select>
 
               <select
