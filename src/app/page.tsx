@@ -2439,9 +2439,6 @@ export default function DMApp() {
               >
                 <Layers className="h-3.5 w-3.5" />
                 デッキ構築
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${totalDeckCardCount >= BASE_DECK_LIMIT ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                  {totalDeckCardCount}/{MAX_DECK_LIMIT}
-                </span>
               </button>
               <button
                 type="button"
