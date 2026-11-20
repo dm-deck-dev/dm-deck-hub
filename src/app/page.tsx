@@ -899,6 +899,71 @@ export default function DMApp() {
     return firstToken.replace(/^[（(【\[]+|[）)】\]]+$/g, "").trim();
   }, []);
 
+  // デュエマ歴代シリーズ・発売時期に基づく並び順スコア（数値が大きいほど最新）
+  const getSetReleaseScore = useCallback((code: string): number => {
+    const c = code.toUpperCase();
+
+    // 1. 新シリーズ形式: DM26RP1, DM26EX5, DM25RP2, DM24EX1, DM22RP1 など
+    const modernMatch = c.match(/^DM(\d{2})([A-Z]+)?(\d+)?/);
+    if (modernMatch) {
+      const year = 2000 + parseInt(modernMatch[1], 10); // 2022〜2026+
+      const subType = modernMatch[2] || "";
+      const num = parseInt(modernMatch[3] || "0", 10);
+      const subOrder: Record<string, number> = {
+        RP: 1,
+        EX: 2,
+        SD: 3,
+        BD: 4,
+        SP: 5,
+        ART: 6,
+      };
+      return year * 10000 + (subOrder[subType] || 0) * 100 + num;
+    }
+
+    // 2. 新章〜王来MAX (2017〜2022): DMRP-01〜22, DMEX-01〜19, DMSD-01〜21, DMBD-01〜22
+    const neoMatch = c.match(/^DM(RP|EX|SD|BD)-?(\d+)/);
+    if (neoMatch) {
+      const prefix = neoMatch[1];
+      const num = parseInt(neoMatch[2], 10);
+      // DMRP-01(2017)〜DMRP-22(2022) を年換算
+      const approxYear =
+        prefix === "RP" ? 2017 + Math.floor((num - 1) / 4) :
+        prefix === "EX" ? 2017 + Math.floor((num - 1) / 4) :
+        2017 + Math.floor((num - 1) / 4);
+      return approxYear * 10000 + num * 10;
+    }
+
+    // 3. E1〜革命ファイナル (2011〜2017): DMR-01〜23, DMD-01〜35, DMX-01〜26
+    const revMatch = c.match(/^DM(R|D|X)-?(\d+)/);
+    if (revMatch) {
+      const prefix = revMatch[1];
+      const num = parseInt(revMatch[2], 10);
+      const maxRef = prefix === "R" ? 23 : prefix === "D" ? 35 : 26;
+      const approxYear = 2011 + Math.round((num / maxRef) * 5.5);
+      return approxYear * 10000 + num * 10;
+    }
+
+    // 4. 初期基本編〜覚醒編 (2002〜2011): DM-01〜39, DMC-01〜68
+    const classicMatch = c.match(/^DM(C)?-?(\d+)$/);
+    if (classicMatch) {
+      const isC = Boolean(classicMatch[1]);
+      const num = parseInt(classicMatch[2], 10);
+      const maxRef = isC ? 68 : 39;
+      const approxYear = 2002 + Math.round((num / maxRef) * 8.5);
+      return approxYear * 10000 + num * 10;
+    }
+
+    // 5. プロモ系 (P1/Y24 など)
+    const promoYearMatch = c.match(/Y(\d{2})/);
+    if (promoYearMatch) {
+      const y = parseInt(promoYearMatch[1], 10);
+      const fullYear = y >= 50 ? 1900 + y : 2000 + y;
+      return fullYear * 10000;
+    }
+
+    return 0;
+  }, []);
+
   const availableSetNames = useMemo(() => {
     const setNames = new Set<string>();
     cards.forEach((c) => {
@@ -906,12 +971,12 @@ export default function DMApp() {
       if (code) setNames.add(code);
     });
     return Array.from(setNames).sort((a, b) => {
-      const yearA = parseInt(a.match(/^DM(\d{2})/i)?.[1] || "-1", 10);
-      const yearB = parseInt(b.match(/^DM(\d{2})/i)?.[1] || "-1", 10);
-      if (yearA !== yearB) return yearB - yearA;
+      const scoreA = getSetReleaseScore(a);
+      const scoreB = getSetReleaseScore(b);
+      if (scoreA !== scoreB) return scoreB - scoreA;
       return b.localeCompare(a, "ja", { numeric: true, sensitivity: "base" });
     });
-  }, [cards, extractSetCode]);
+  }, [cards, extractSetCode, getSetReleaseScore]);
 
   const availableCardTypes = useMemo(() => {
     const types = new Set<string>(['クリーチャー', '呪文', 'クロスギア', '城']);
