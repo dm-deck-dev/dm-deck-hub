@@ -122,8 +122,38 @@ export default function DMApp() {
   const [user, setUser] = useState<User | null>(null);
 
   const cardListTopRef = useRef<HTMLDivElement | null>(null);
+  const isInitialFilterMount = useRef<boolean>(true);
+  const isViewRestored = useRef<boolean>(false);
 
   const [activeTab, setActiveTab] = useState<'collection' | 'deck' | 'friends' | 'settings'>('deck');
+
+  useEffect(() => {
+    try {
+      const savedTab = sessionStorage.getItem('dm_deck_hub_active_tab');
+      if (savedTab === 'collection' || savedTab === 'deck' || savedTab === 'friends' || savedTab === 'settings') {
+        setActiveTab(savedTab);
+      }
+      const savedPage = Number(sessionStorage.getItem('dm_deck_hub_current_page'));
+      if (Number.isInteger(savedPage) && savedPage >= 1) {
+        setCurrentPage(savedPage);
+      }
+    } catch {}
+    isViewRestored.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!isViewRestored.current) return;
+    try {
+      sessionStorage.setItem('dm_deck_hub_active_tab', activeTab);
+    } catch {}
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!isViewRestored.current) return;
+    try {
+      sessionStorage.setItem('dm_deck_hub_current_page', String(currentPage));
+    } catch {}
+  }, [currentPage]);
   const [deckViewMode, setDeckViewMode] = useState<'tiles' | 'list'>('tiles');
 
   const [currentDeckId, setCurrentDeckId] = useState<string | null>(null);
@@ -882,8 +912,12 @@ export default function DMApp() {
     });
   }, [cards, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, normalizeSearchText, rubyMatchedNames]);
 
-  // 検索条件が変わったら1ページ目に戻す
+  // 検索条件が変わったら1ページ目に戻す（初回マウント時は保存済みページ番号を優先）
   useEffect(() => {
+    if (isInitialFilterMount.current) {
+      isInitialFilterMount.current = false;
+      return;
+    }
     setCurrentPage(1);
   }, [searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned]);
 
