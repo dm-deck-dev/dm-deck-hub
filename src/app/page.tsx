@@ -3686,47 +3686,54 @@ export default function DMApp() {
                         type="button"
                         disabled={totalDeckCardCount === 0 || isExportingImage}
                         onClick={exportDeckAsImage}
-                        title="デッキレシピ画像をダウンロード"
-                        className="p-1.5 text-slate-500 hover:text-indigo-600 rounded-lg hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                        title="スクショ"
+                        aria-label="スクショ"
+                        className="relative group p-1.5 text-slate-500 hover:text-indigo-600 rounded-lg hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
                       >
                         {isExportingImage ? <Loader2 className="h-4 w-4 animate-spin text-indigo-600" /> : <Camera className="h-4 w-4" />}
+                        <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-white opacity-0 shadow transition-opacity group-hover:opacity-100 z-20">
+                          スクショ
+                        </span>
                       </button>
 
                       <button
                         type="button"
                         disabled={totalDeckCardCount === 0}
                         onClick={handleCopyDeckRecipe}
-                        title="デッキレシピをクリップボードにコピー"
-                        className="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                        title="レシピコピー"
+                        aria-label="レシピコピー"
+                        className="relative group p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
                       >
                         {copiedDeckList ? <Check className="h-4 w-4 text-emerald-600" /> : <Share2 className="h-4 w-4" />}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={startNewDeck}
-                        title="新規デッキとしてやり直す"
-                        className="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-slate-100 cursor-pointer"
-                      >
-                        <PlusCircle className="h-4 w-4" />
+                        <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-white opacity-0 shadow transition-opacity group-hover:opacity-100 z-20">
+                          レシピコピー
+                        </span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => setDeckViewMode(deckViewMode === 'tiles' ? 'list' : 'tiles')}
-                        title={deckViewMode === 'tiles' ? 'リスト表示へ切替' : '枚数分タイル表示へ切替'}
-                        className="p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-slate-100 cursor-pointer"
+                        title={deckViewMode === 'tiles' ? 'リスト表示へ切替' : 'タイル表示へ切替'}
+                        aria-label={deckViewMode === 'tiles' ? 'リスト表示へ切替' : 'タイル表示へ切替'}
+                        className="relative group p-1.5 text-slate-500 hover:text-blue-600 rounded-lg hover:bg-slate-100 cursor-pointer"
                       >
                         {deckViewMode === 'tiles' ? <List className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+                        <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-white opacity-0 shadow transition-opacity group-hover:opacity-100 z-20">
+                          {deckViewMode === 'tiles' ? 'リスト表示' : 'タイル表示'}
+                        </span>
                       </button>
 
                       <button
                         type="button"
                         onClick={clearDeck}
-                        title="デッキをクリア"
-                        className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 cursor-pointer"
+                        title="削除"
+                        aria-label="削除"
+                        className="relative group p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 cursor-pointer"
                       >
                         <Trash2 className="h-4 w-4" />
+                        <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-white opacity-0 shadow transition-opacity group-hover:opacity-100 z-20">
+                          削除
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -3951,7 +3958,7 @@ export default function DMApp() {
                 >
                   {deckSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                   {currentDeckId
-                    ? `上書き保存する（${totalDeckCardCount}枚）`
+                    ? `保存する（${totalDeckCardCount}枚）`
                     : totalDeckCardCount >= BASE_DECK_LIMIT
                     ? `デッキを新規保存する（${totalDeckCardCount}枚 構築完了）`
                     : `下書き保存する（${totalDeckCardCount}/${MAX_DECK_LIMIT}枚）`}
