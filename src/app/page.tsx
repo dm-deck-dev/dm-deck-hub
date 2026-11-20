@@ -840,6 +840,21 @@ export default function DMApp() {
     return Object.values(deckCards).reduce((acc, cur) => acc + cur, 0);
   }, [deckCards]);
 
+  const normalizeDeckCardName = useCallback((name: string) => {
+    return (name || "").replace(/[\s\u3000]+/g, " ").trim();
+  }, []);
+
+  const deckCardNameCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    const cardById = new Map(cards.map((c) => [c.id, c]));
+    Object.entries(deckCards).forEach(([cardId, count]) => {
+      const card = cardById.get(cardId);
+      const key = card ? normalizeDeckCardName(card.name) : cardId;
+      map[key] = (map[key] || 0) + count;
+    });
+    return map;
+  }, [deckCards, cards, normalizeDeckCardName]);
+
   const flattenedDeckCards = useMemo(() => {
     const list: Card[] = [];
     Object.entries(deckCards).forEach(([cardId, count]) => {
@@ -1179,16 +1194,29 @@ export default function DMApp() {
   };
 
   const addCardToDeck = (card: Card) => {
-    const cur = deckCards[card.id] || 0;
+    const targetNameKey = normalizeDeckCardName(card.name);
+    const sameNameTotal = deckCardNameCounts[targetNameKey] || 0;
     if (totalDeckCardCount >= MAX_DECK_LIMIT) {
       setDeckMessage({ text: `デッキは最大${MAX_DECK_LIMIT}枚までです。`, type: 'error' });
       return;
     }
-    if (cur >= 4) {
-      setDeckMessage({ text: '同名カードは4枚までしか入れられません。', type: 'error' });
+    if (sameNameTotal >= 4) {
+      setDeckMessage({ text: `「${card.name}」は同名カードのため合計4枚までしか入れられません。`, type: 'error' });
       return;
     }
-    setDeckCards((prev) => ({ ...prev, [card.id]: cur + 1 }));
+    setDeckCards((prev) => {
+      const prevTotal = Object.values(prev).reduce((acc, c) => acc + c, 0);
+      if (prevTotal >= MAX_DECK_LIMIT) return prev;
+      let prevSameName = 0;
+      Object.entries(prev).forEach(([id, c]) => {
+        const found = cards.find((item) => item.id === id);
+        if (found && normalizeDeckCardName(found.name) === targetNameKey) {
+          prevSameName += c;
+        }
+      });
+      if (prevSameName >= 4) return prev;
+      return { ...prev, [card.id]: (prev[card.id] || 0) + 1 };
+    });
     setDeckMessage(null);
   };
 
@@ -3549,7 +3577,7 @@ export default function DMApp() {
                             <div onClick={(e) => e.stopPropagation()}>
                               <button
                                 type="button"
-                                disabled={inDeck >= 4 || totalDeckCardCount >= MAX_DECK_LIMIT}
+                                disabled={(deckCardNameCounts[normalizeDeckCardName(card.name)] || 0) >= 4 || totalDeckCardCount >= MAX_DECK_LIMIT}
                                 onClick={() => addCardToDeck(card)}
                                 className="w-full py-1.5 px-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center justify-center gap-1 disabled:bg-slate-200 disabled:text-slate-400 cursor-pointer shadow-sm"
                               >
@@ -3902,7 +3930,7 @@ export default function DMApp() {
                                 <Minus className="h-2.5 w-2.5" />
                               </button>
                               <span className="w-4 text-center font-bold text-slate-800 text-[11px]">{count}</span>
-                              <button type="button" onClick={() => addCardToDeck(card)} disabled={count >= 4 || totalDeckCardCount >= MAX_DECK_LIMIT} className="h-4 w-4 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 disabled:opacity-30">
+                              <button type="button" onClick={() => addCardToDeck(card)} disabled={(deckCardNameCounts[normalizeDeckCardName(card.name)] || 0) >= 4 || totalDeckCardCount >= MAX_DECK_LIMIT} className="h-4 w-4 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 disabled:opacity-30">
                                 <Plus className="h-2.5 w-2.5" />
                               </button>
                             </div>
