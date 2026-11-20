@@ -304,6 +304,7 @@ export default function DMApp() {
   const [selectedCivilization, setSelectedCivilization] = useState<string>('all');
   const [selectedCost, setSelectedCost] = useState<string>('all');
   const [onlyOwned, setOnlyOwned] = useState<boolean>(false);
+  const [sortBy, setSortBy] = useState<"release" | "name" | "civilization" | "cost">("release");
 
   const [activeCard, setActiveCard] = useState<Card | null>(null);
 
@@ -1045,17 +1046,59 @@ export default function DMApp() {
       }
       if (onlyOwned && (counts[card.id] || 0) === 0) return false;
       return true;
+    }).sort((a, b) => {
+      if (sortBy === "name") {
+        const nameA = (a.ruby || a.name || "").trim();
+        const nameB = (b.ruby || b.name || "").trim();
+        return nameA.localeCompare(nameB, "ja", { numeric: true, sensitivity: "base" });
+      }
+      if (sortBy === "civilization") {
+        const getCivRank = (civList?: string[]): number => {
+          const valid = (civList || []).filter(
+            (c) => !["ゼロ", "零", "無色", "zero"].includes(c.toLowerCase())
+          );
+          const hasMultiTag = (civList || []).some(
+            (c) => c.includes("多色") || c.includes("レインボー")
+          );
+          if (valid.length >= 2 || hasMultiTag) return 6; // 多色
+          if (valid.length === 0) return 7; // 零文明（無色）
+          const single = valid[0];
+          if (single.includes("火")) return 1;
+          if (single.includes("水")) return 2;
+          if (single.includes("自然")) return 3;
+          if (single.includes("光")) return 4;
+          if (single.includes("闇")) return 5;
+          return 7;
+        };
+        const rankDiff = getCivRank(a.civilization) - getCivRank(b.civilization);
+        if (rankDiff !== 0) return rankDiff;
+        const costA = typeof a.cost === "number" ? a.cost : 999;
+        const costB = typeof b.cost === "number" ? b.cost : 999;
+        if (costA !== costB) return costA - costB;
+        return (a.ruby || a.name || "").localeCompare(b.ruby || b.name || "", "ja");
+      }
+      if (sortBy === "cost") {
+        const costA = typeof a.cost === "number" ? a.cost : 999;
+        const costB = typeof b.cost === "number" ? b.cost : 999;
+        if (costA !== costB) return costA - costB;
+        return (a.ruby || a.name || "").localeCompare(b.ruby || b.name || "", "ja");
+      }
+      // デフォルト: release（発売日順: 新しい弾 → 古い弾）
+      const scoreA = getSetReleaseScore(extractSetCode(a.set_name));
+      const scoreB = getSetReleaseScore(extractSetCode(b.set_name));
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return (a.ruby || a.name || "").localeCompare(b.ruby || b.name || "", "ja");
     });
-  }, [cards, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, normalizeSearchText, rubyMatchedNames, extractSetCode]);
+  }, [cards, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, sortBy, normalizeSearchText, rubyMatchedNames, extractSetCode, getSetReleaseScore]);
 
-  // 検索条件が変わったら1ページ目に戻す（初回マウント時は保存済みページ番号を優先）
+  // 検索条件・並び順が変わったら1ページ目に戻す（初回マウント時は保存済みページ番号を優先）
   useEffect(() => {
     if (isInitialFilterMount.current) {
       isInitialFilterMount.current = false;
       return;
     }
     setCurrentPage(1);
-  }, [searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned]);
+  }, [searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, sortBy]);
 
   // ページネーション計算
   const totalPages = Math.max(1, Math.ceil(filteredCards.length / CARDS_PER_PAGE));
@@ -3324,13 +3367,13 @@ export default function DMApp() {
                 className="border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-medium bg-white"
               >
                 <option value="all">文明: 全て</option>
-                <option value="光">光文明</option>
-                <option value="水">水文明</option>
-                <option value="闇">闇文明</option>
                 <option value="火">火文明</option>
+                <option value="水">水文明</option>
                 <option value="自然">自然文明</option>
-                <option value="zero">零文明（無色）</option>
+                <option value="光">光文明</option>
+                <option value="闇">闇文明</option>
                 <option value="multicolor">多色（レインボー）</option>
+                <option value="zero">零文明（無色）</option>
               </select>
 
               <select
@@ -3343,6 +3386,17 @@ export default function DMApp() {
                   <option key={c} value={c}>コスト {c}</option>
                 ))}
                 <option value="10">コスト 10+</option>
+              </select>
+
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as "release" | "name" | "civilization" | "cost")}
+                className="border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-medium bg-white"
+              >
+                <option value="release">並び順: 発売日順</option>
+                <option value="name">並び順: 名前順</option>
+                <option value="civilization">並び順: 文明順</option>
+                <option value="cost">並び順: コスト順</option>
               </select>
 
               <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-600 select-none">
