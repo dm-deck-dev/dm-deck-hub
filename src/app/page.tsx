@@ -886,10 +886,17 @@ export default function DMApp() {
 
   const extractSetCode = useCallback((raw?: string | null) => {
     if (!raw) return "";
-    const cleaned = raw.trim().replace(/^[（(]+|[）)]+$/g, "").trim();
+    const cleaned = raw
+      .trim()
+      .replace(/^[（(【\[]+|[）)】\]]+$/g, "")
+      .trim();
     if (!cleaned) return "";
-    const firstToken = cleaned.split(/[\s　/／]+/)[0] || "";
-    return firstToken.replace(/^[（(]+|[）)]+$/g, "").trim();
+    const dmMatch = cleaned.match(/^(DM[A-Z0-9-]+)/i);
+    if (dmMatch) {
+      return dmMatch[1].toUpperCase();
+    }
+    const firstToken = cleaned.split(/[\s\u3000/／]+/)[0] || "";
+    return firstToken.replace(/^[（(【\[]+|[）)】\]]+$/g, "").trim();
   }, []);
 
   const availableSetNames = useMemo(() => {
@@ -898,7 +905,12 @@ export default function DMApp() {
       const code = extractSetCode(c.set_name);
       if (code) setNames.add(code);
     });
-    return Array.from(setNames).sort();
+    return Array.from(setNames).sort((a, b) => {
+      const yearA = parseInt(a.match(/^DM(\d{2})/i)?.[1] || "-1", 10);
+      const yearB = parseInt(b.match(/^DM(\d{2})/i)?.[1] || "-1", 10);
+      if (yearA !== yearB) return yearB - yearA;
+      return b.localeCompare(a, "ja", { numeric: true, sensitivity: "base" });
+    });
   }, [cards, extractSetCode]);
 
   const availableCardTypes = useMemo(() => {
