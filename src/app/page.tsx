@@ -42,6 +42,7 @@ import {
   UserPlus,
   ArrowLeftRight,
   Copy,
+  Edit3,
   Eye,
   Send,
 } from 'lucide-react';
@@ -201,6 +202,8 @@ export default function DMApp() {
 
   // マイデッキ一覧モーダル
   const [isDeckListOpen, setIsDeckListOpen] = useState(false);
+  const [deckTabScreen, setDeckTabScreen] = useState<'list' | 'editor'>('list');
+  const [selectedDeckForAction, setSelectedDeckForAction] = useState<string | null>(null);
   const [savedDecks, setSavedDecks] = useState<{ id: string; name: string; created_at: string; total_cards: number }[]>([]);
   const [loadingDecks, setLoadingDecks] = useState(false);
 
@@ -1013,6 +1016,111 @@ export default function DMApp() {
     setDeckName('新規デッキ');
     setDeckCards({});
     setDeckMessage(null);
+    setDeckTabScreen('editor');
+  };
+
+  const fetchSavedDecksSilent = async () => {
+    if (!user) {
+      setSavedDecks([]);
+      return;
+    }
+    try {
+      setLoadingDecks(true);
+      const { data, error } = await supabase
+        .from('decks')
+        .select(`id, name, created_at, deck_cards (count)`)
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
+      if (error) throw error;
+      setSavedDecks(
+        (data || []).map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          created_at: d.created_at,
+          total_cards: (d.deck_cards || []).reduce((acc: number, c: any) => acc + (c.count || 0), 0),
+        }))
+      );
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingDecks(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'deck') {
+      fetchSavedDecksSilent();
+    }
+  }, [activeTab, user]);
+
+  const duplicateSavedDeck = async (deckId: string, originalName: string) => {
+    if (!user) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+    try {
+      setLoadingDecks(true);
+      const { data: cardsData, error: cardsError } = await supabase
+        .from('deck_cards')
+        .select('card_id, count')
+        .eq('deck_id', deckId);
+      if (cardsError) throw cardsError;
+
+      const copyName = `${originalName} のコピー`;
+      const { data: newDeck, error: insertError } = await supabase
+        .from('decks')
+        .insert({ user_id: user.id, name: copyName })
+        .select()
+        .single();
+      if (insertError || !newDeck) throw insertError || new Error('デッキの複製に失敗しました。');
+
+      if (cardsData && cardsData.length > 0) {
+        const records = cardsData.map((c: any) => ({
+          deck_id: newDeck.id,
+          card_id: c.card_id,
+          count: c.count,
+        }));
+        const { error: copyCardsError } = await supabase.from('deck_cards').insert(records);
+        if (copyCardsError) throw copyCardsError;
+      }
+
+      await fetchSavedDecksSilent();
+      setSelectedDeckForAction(newDeck.id);
+      setDeckMessage({ text: `「${copyName}」を作成しました。`, type: 'success' });
+    } catch (err: any) {
+      console.error(err);
+      setDeckMessage({ text: err.message || 'デッキのコピーに失敗しました。', type: 'error' });
+    } finally {
+      setLoadingDecks(false);
+    }
+  };
+
+  const deleteSavedDeck = async (deckId: string, targetName: string) => {
+    if (!window.confirm(`デッキ「${targetName}」を削除しますか？この操作は取り消せません。`)) {
+      return;
+    }
+    try {
+      setLoadingDecks(true);
+      await supabase.from('deck_cards').delete().eq('deck_id', deckId);
+      const { error } = await supabase.from('decks').delete().eq('id', deckId);
+      if (error) throw error;
+
+      if (currentDeckId === deckId) {
+        setCurrentDeckId(null);
+        setDeckName('新規デッキ');
+        setDeckCards({});
+      }
+      if (selectedDeckForAction === deckId) {
+        setSelectedDeckForAction(null);
+      }
+      await fetchSavedDecksSilent();
+      setDeckMessage({ text: `「${targetName}」を削除しました。`, type: 'success' });
+    } catch (err: any) {
+      console.error(err);
+      setDeckMessage({ text: err.message || 'デッキの削除に失敗しました。', type: 'error' });
+    } finally {
+      setLoadingDecks(false);
+    }
   };
 
   const saveDeckToDB = async () => {
@@ -1056,30 +1164,9 @@ export default function DMApp() {
   };
 
   const loadSavedDecks = async () => {
-    if (!user) {
-      setIsAuthModalOpen(true);
-      return;
-    }
-    try {
-      setLoadingDecks(true);
-      setIsDeckListOpen(true);
-      const { data, error } = await supabase
-        .from('decks')
-        .select(`id, name, created_at, deck_cards (count)`)
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: false });
-      if (error) throw error;
-      setSavedDecks(
-        (data || []).map((d: any) => ({
-          id: d.id,
-          name: d.name,
-          created_at: d.created_at,
-          total_cards: (d.deck_cards || []).reduce((acc: number, c: any) => acc + (c.count || 0), 0),
-        }))
-      );
-    } finally {
-      setLoadingDecks(false);
-    }
+    setDeckTabScreen('list');
+    setSelectedDeckForAction(null);
+    await fetchSavedDecksSilent();
   };
 
   const loadDeckToBuilder = async (deckId: string) => {
@@ -1111,6 +1198,7 @@ export default function DMApp() {
       setDeckName(deckData.name);
       setDeckCards(cardMap);
       setIsDeckListOpen(false);
+      setDeckTabScreen('editor');
       setActiveTab('deck');
       setDeckMessage({ text: `「${deckData.name}」を読み込みました。`, type: 'success' });
     } catch (err: any) {
@@ -2158,7 +2246,11 @@ export default function DMApp() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('deck')}
+                onClick={() => {
+                  setActiveTab('deck');
+                  setDeckTabScreen('list');
+                  setSelectedDeckForAction(null);
+                }}
                 className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === 'deck' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                 }`}
@@ -2715,8 +2807,159 @@ export default function DMApp() {
             </div>
           </div>
         </div>
+      ) : activeTab === 'deck' && deckTabScreen === 'list' ? (
+        /* ================ デッキ構築：作成済みデッキ一覧画面 ================ */
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <DeckIcon className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-slate-900">マイデッキ一覧</h2>
+                  <p className="text-xs text-slate-500">デッキを選択すると「編集」「コピー」「削除」ができます</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={startNewDeck}
+                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                新規作成
+              </button>
+            </div>
+
+            {deckMessage && (
+              <div
+                className={`p-3 rounded-xl text-xs font-bold flex items-center justify-between ${
+                  deckMessage.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}
+              >
+                <span>{deckMessage.text}</span>
+                <button type="button" onClick={() => setDeckMessage(null)} className="text-current opacity-60 hover:opacity-100">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {!user ? (
+              <div className="text-center py-12 space-y-4">
+                <p className="text-sm text-slate-500">作成済みデッキの保存・一覧表示にはログインが必要です（未ログインでも新規作成からデッキ構築を試せます）。</p>
+                <div className="flex justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsAuthModalOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition cursor-pointer"
+                  >
+                    ログイン / 新規登録
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startNewDeck}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4" />
+                    新規作成を始める
+                  </button>
+                </div>
+              </div>
+            ) : loadingDecks ? (
+              <div className="text-center py-14 text-slate-400 text-sm font-medium">デッキ一覧を読み込み中...</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* 新規作成カード */}
+                <button
+                  type="button"
+                  onClick={startNewDeck}
+                  className="p-5 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/40 hover:bg-blue-50 hover:border-blue-500 transition flex flex-col items-center justify-center gap-2 min-h-[148px] text-blue-700 cursor-pointer group"
+                >
+                  <div className="w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition">
+                    <Plus className="h-6 w-6" />
+                  </div>
+                  <span className="font-black text-sm">新規作成</span>
+                  <span className="text-[11px] text-blue-600/80">新しいデッキをゼロから構築</span>
+                </button>
+
+                {/* 作成済みデッキカード */}
+                {savedDecks.map((deck) => {
+                  const isSelected = selectedDeckForAction === deck.id;
+                  return (
+                    <div
+                      key={deck.id}
+                      onClick={() => setSelectedDeckForAction(isSelected ? null : deck.id)}
+                      className={`p-4 rounded-2xl border transition flex flex-col justify-between min-h-[148px] cursor-pointer ${
+                        isSelected
+                          ? 'border-blue-600 bg-blue-50/60 ring-2 ring-blue-500/20 shadow-md'
+                          : 'border-slate-200 bg-white hover:border-blue-400 hover:shadow-sm'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="font-black text-base text-slate-900 line-clamp-2">{deck.name}</h3>
+                          <span
+                            className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                              deck.total_cards >= BASE_DECK_LIMIT
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {deck.total_cards}枚
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1.5">
+                          作成日: {new Date(deck.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+
+                      {isSelected ? (
+                        <div
+                          className="pt-3 mt-3 border-t border-blue-200/80 grid grid-cols-3 gap-1.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => loadDeckToBuilder(deck.id)}
+                            className="py-2 px-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                            編集
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => duplicateSavedDeck(deck.id, deck.name)}
+                            className="py-2 px-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                            コピー
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteSavedDeck(deck.id, deck.name)}
+                            className="py-2 px-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            削除
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                          <span>クリックして操作を選択</span>
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
-        /* ================ タブ1・2: 資産管理＆デッキ構築画面 ================ */
+        /* ================ タブ1・2: 資産管理＆デッキ構築エディタ画面 ================ */
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
           <section ref={cardListTopRef} className={`${activeTab === 'deck' ? 'lg:col-span-6' : 'lg:col-span-12'} space-y-4 scroll-mt-20`}>
             <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap gap-2.5 items-center">
