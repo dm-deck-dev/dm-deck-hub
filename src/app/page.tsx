@@ -118,42 +118,48 @@ export default function DMApp() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [isSyncingAll, setIsSyncingAll] = useState<boolean>(false);
-  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [currentPage, setCurrentPage] = useState<number>(() => {
+    if (typeof window === 'undefined') return 1;
+    try {
+      const savedPage = Number(sessionStorage.getItem('dm_deck_hub_current_page'));
+      if (Number.isInteger(savedPage) && savedPage >= 1) return savedPage;
+    } catch {}
+    return 1;
+  });
   const [user, setUser] = useState<User | null>(null);
 
   const cardListTopRef = useRef<HTMLDivElement | null>(null);
   const isInitialFilterMount = useRef<boolean>(true);
-  const isViewRestored = useRef<boolean>(false);
+  const [isClientMounted, setIsClientMounted] = useState<boolean>(false);
 
-  const [activeTab, setActiveTab] = useState<'collection' | 'deck' | 'friends' | 'settings'>('deck');
-
-  useEffect(() => {
+  const [activeTab, setActiveTab] = useState<'collection' | 'deck' | 'friends' | 'settings'>(() => {
+    if (typeof window === 'undefined') return 'deck';
     try {
       const savedTab = sessionStorage.getItem('dm_deck_hub_active_tab');
       if (savedTab === 'collection' || savedTab === 'deck' || savedTab === 'friends' || savedTab === 'settings') {
-        setActiveTab(savedTab);
-      }
-      const savedPage = Number(sessionStorage.getItem('dm_deck_hub_current_page'));
-      if (Number.isInteger(savedPage) && savedPage >= 1) {
-        setCurrentPage(savedPage);
+        return savedTab;
       }
     } catch {}
-    isViewRestored.current = true;
+    return 'deck';
+  });
+
+  useEffect(() => {
+    setIsClientMounted(true);
   }, []);
 
   useEffect(() => {
-    if (!isViewRestored.current) return;
+    if (!isClientMounted) return;
     try {
       sessionStorage.setItem('dm_deck_hub_active_tab', activeTab);
     } catch {}
-  }, [activeTab]);
+  }, [activeTab, isClientMounted]);
 
   useEffect(() => {
-    if (!isViewRestored.current) return;
+    if (!isClientMounted) return;
     try {
       sessionStorage.setItem('dm_deck_hub_current_page', String(currentPage));
     } catch {}
-  }, [currentPage]);
+  }, [currentPage, isClientMounted]);
   const [deckViewMode, setDeckViewMode] = useState<'tiles' | 'list'>('tiles');
 
   const [currentDeckId, setCurrentDeckId] = useState<string | null>(null);
@@ -1353,6 +1359,10 @@ export default function DMApp() {
     setSimHand((prev) => [...prev, shieldInstance]);
     setSimGameMessage(`🛡️ シールド「${shieldInstance.card.name}」を手札に加えました！`);
   };
+
+  if (!isClientMounted) {
+    return <div className="min-h-screen bg-slate-950" />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 pb-12">
