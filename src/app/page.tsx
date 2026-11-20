@@ -304,7 +304,7 @@ export default function DMApp() {
   const [selectedCivilization, setSelectedCivilization] = useState<string>('all');
   const [selectedCost, setSelectedCost] = useState<string>('all');
   const [onlyOwned, setOnlyOwned] = useState<boolean>(false);
-  const [sortBy, setSortBy] = useState<"release" | "name" | "civilization" | "cost">("release");
+  const [sortBy, setSortBy] = useState<"release" | "name" | "civilization" | "cost" | "rarity">("release");
 
   const [activeCard, setActiveCard] = useState<Card | null>(null);
 
@@ -1081,6 +1081,34 @@ export default function DMApp() {
         const costA = typeof a.cost === "number" ? a.cost : 999;
         const costB = typeof b.cost === "number" ? b.cost : 999;
         if (costA !== costB) return costA - costB;
+        return (a.ruby || a.name || "").localeCompare(b.ruby || b.name || "", "ja");
+      }
+      if (sortBy === "rarity") {
+        const getRarityRank = (raw?: string | null): number => {
+          const r = (raw || "").trim().toUpperCase();
+          if (!r || r === "-" || r === "NONE" || r === "不明" || r === "プロモ" || r === "P" || r === "PROMO") return 90;
+          // 最高レアリティ帯（オーバーレア / ドリームレア / キングマスター / マスター / レジェンド / ビクトリー等）
+          if (r === "OR" || r.includes("オーバー")) return 1;
+          if (r === "DMR" || r.includes("ドリーム")) return 2;
+          if (r === "KGM" || r.includes("キングマスター")) return 3;
+          if (r === "MAS" || r === "MDG" || r === "MSS" || r.includes("マスター")) return 4;
+          if (r === "LEG" || r === "L" || r.includes("レジェンド")) return 5;
+          if (r === "VIC" || r === "V" || r.includes("ビクトリー")) return 6;
+          if (r === "SEC" || r.includes("シークレット")) return 7;
+          if (r === "SP" || r.includes("スペシャル") || r.includes("金トレジャー") || r.includes("銀トレジャー") || r.includes("キャラプレミアム")) return 8;
+          // 通常レアリティ帯
+          if (r === "SR" || r.includes("スーパー")) return 10;
+          if (r === "VR" || r.includes("ベリー")) return 20;
+          if (r === "R" || r === "RARE" || r === "レア") return 30;
+          if (r === "UC" || r === "U" || r === "UNCOMMON" || r.includes("アンコモン")) return 40;
+          if (r === "C" || r === "COMMON" || r.includes("コモン")) return 50;
+          return 80;
+        };
+        const rankDiff = getRarityRank(a.rarity) - getRarityRank(b.rarity);
+        if (rankDiff !== 0) return rankDiff;
+        const scoreA = getSetReleaseScore(extractSetCode(a.set_name));
+        const scoreB = getSetReleaseScore(extractSetCode(b.set_name));
+        if (scoreA !== scoreB) return scoreB - scoreA;
         return (a.ruby || a.name || "").localeCompare(b.ruby || b.name || "", "ja");
       }
       // デフォルト: release（発売日順: 新しい弾 → 古い弾）
@@ -3390,13 +3418,14 @@ export default function DMApp() {
 
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as "release" | "name" | "civilization" | "cost")}
+                onChange={(e) => setSortBy(e.target.value as "release" | "name" | "civilization" | "cost" | "rarity")}
                 className="border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-medium bg-white"
               >
                 <option value="release">並び順: 発売日順</option>
                 <option value="name">並び順: 名前順</option>
                 <option value="civilization">並び順: 文明順</option>
                 <option value="cost">並び順: コスト順</option>
+                <option value="rarity">並び順: レアリティ順</option>
               </select>
 
               <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-600 select-none">
