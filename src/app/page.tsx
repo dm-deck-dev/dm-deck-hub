@@ -2640,23 +2640,54 @@ export default function DMApp() {
       />
 
       {/* ---------------- ヘッダー ---------------- */}
-      <header className="border-b bg-white px-6 py-3.5 shadow-sm sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-4 sm:gap-6">
-            <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-lg shadow-md">
+      <header className="border-b bg-white px-3.5 sm:px-6 py-2.5 sm:py-3.5 shadow-sm sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-2.5">
+          {/* 上段（PCでは左側＋右側に展開） */}
+          <div className="flex items-center justify-between md:justify-start md:gap-6 w-full md:w-auto">
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-base sm:text-lg shadow-md shrink-0">
                 DM
               </div>
-              <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+              <span className="font-extrabold text-base sm:text-lg tracking-tight whitespace-nowrap bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
                 DM Deck Hub
               </span>
             </div>
 
-            <nav className="flex items-center bg-slate-100 p-1 rounded-xl">
+            {/* スマホ用の右上アカウント操作（PCでは非表示にして右端へ） */}
+            <div className="flex items-center gap-2 md:hidden shrink-0">
+              {user ? (
+                <>
+                  <span className="text-[11px] text-slate-600 inline-flex items-center gap-1 bg-slate-100 py-1 px-2 rounded-full font-semibold max-w-[96px] truncate">
+                    <UserIcon className="h-3 w-3 text-slate-500 shrink-0" />
+                    <span className="truncate">{myProfile?.display_name || (user.user_metadata?.display_name as string) || user.email}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => supabase.auth.signOut()}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition whitespace-nowrap cursor-pointer"
+                  >
+                    <LogOut className="h-3 w-3 shrink-0" />
+                    ログアウト
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm whitespace-nowrap cursor-pointer"
+                >
+                  <LogIn className="h-3 w-3 shrink-0" />
+                  ログイン
+                </button>
+              )}
+            </div>
+
+            {/* PC用ナビゲーションタブ */}
+            <nav className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl">
               <button
                 type="button"
                 onClick={() => setActiveTab('collection')}
-                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
                   activeTab === 'collection' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -2669,7 +2700,7 @@ export default function DMApp() {
                   setDeckTabScreen('list');
                   setSelectedDeckForAction(null);
                 }}
-                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                   activeTab === 'deck' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -2685,7 +2716,7 @@ export default function DMApp() {
                   }
                   setActiveTab('friends');
                 }}
-                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer relative ${
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer relative ${
                   activeTab === 'friends' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -2706,7 +2737,7 @@ export default function DMApp() {
                   }
                   setActiveTab('settings');
                 }}
-                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
                   activeTab === 'settings' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -2715,10 +2746,74 @@ export default function DMApp() {
             </nav>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* スマホ用4列均等ナビゲーションタブ（縦書き折り返し防止） */}
+          <nav className="grid grid-cols-4 gap-1 md:hidden bg-slate-100 p-1 rounded-xl w-full">
+            <button
+              type="button"
+              onClick={() => setActiveTab('collection')}
+              className={`py-1.5 px-1 text-[11px] font-bold rounded-lg transition-all text-center whitespace-nowrap cursor-pointer ${
+                activeTab === 'collection' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'
+              }`}
+            >
+              資産管理
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('deck');
+                setDeckTabScreen('list');
+                setSelectedDeckForAction(null);
+              }}
+              className={`py-1.5 px-1 text-[11px] font-bold rounded-lg transition-all flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
+                activeTab === 'deck' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'
+              }`}
+            >
+              <Layers className="h-3 w-3 shrink-0" />
+              デッキ構築
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!user) {
+                  setIsAuthModalOpen(true);
+                  return;
+                }
+                setActiveTab('friends');
+              }}
+              className={`py-1.5 px-1 text-[11px] font-bold rounded-lg transition-all flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer relative ${
+                activeTab === 'friends' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'
+              }`}
+            >
+              <Users className="h-3 w-3 shrink-0" />
+              フレンド
+              {pendingNotificationCount > 0 && (
+                <span className="px-1 rounded-full text-[9px] bg-rose-500 text-white font-black">
+                  {pendingNotificationCount}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!user) {
+                  setIsAuthModalOpen(true);
+                  return;
+                }
+                setActiveTab('settings');
+              }}
+              className={`py-1.5 px-1 text-[11px] font-bold rounded-lg transition-all text-center whitespace-nowrap cursor-pointer ${
+                activeTab === 'settings' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'
+              }`}
+            >
+              設定
+            </button>
+          </nav>
+
+          {/* PC用右端アカウント欄 */}
+          <div className="hidden md:flex items-center gap-3">
             {user ? (
               <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-600 hidden sm:inline flex items-center gap-1.5 bg-slate-100 py-1.5 px-3 rounded-full font-medium">
+                <span className="text-xs text-slate-600 inline-flex items-center gap-1.5 bg-slate-100 py-1.5 px-3 rounded-full font-medium">
                   <UserIcon className="h-3.5 w-3.5 text-slate-500" />
                   {myProfile?.display_name || (user.user_metadata?.display_name as string) || user.email}
                 </span>
