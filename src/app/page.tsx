@@ -2845,6 +2845,9 @@ export default function DMApp() {
         <SettingsView
           user={user}
           currentDisplayName={myProfile?.display_name || (user.user_metadata?.display_name as string) || ''}
+          cards={cards}
+          counts={counts}
+          onCountsUpdated={(updated) => setCounts(updated)}
           onProfileUpdated={(newName) => {
             setMyProfile((prev: any) => (prev ? { ...prev, display_name: newName } : { id: user.id, email: user.email, display_name: newName }));
           }}
