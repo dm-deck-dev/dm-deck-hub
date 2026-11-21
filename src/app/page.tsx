@@ -1546,12 +1546,13 @@ export default function DMApp() {
   };
 
   // ---------------- 一人回しシミュレーター開始 ----------------
-  const startSimulator = () => {
-    if (flattenedDeckCards.length === 0) {
+  const startSimulator = (overrideCards?: unknown) => {
+    const sourceCards = Array.isArray(overrideCards) ? (overrideCards as Card[]) : flattenedDeckCards;
+    if (sourceCards.length === 0) {
       setDeckMessage({ text: '一人回しを開始するには最低1枚以上のカードが必要です。', type: 'error' });
       return;
     }
-    const playerInstances: SimCardInstance[] = flattenedDeckCards.map((c, i) => ({
+    const playerInstances: SimCardInstance[] = sourceCards.map((c, i) => ({
       instanceId: `p-${c.id}-${i}-${Math.random()}`,
       card: c,
       isTapped: false,
@@ -1578,6 +1579,39 @@ export default function DMApp() {
 
     setSimGameMessage(`一人回し開始！手札5枚・シールド5枚でスタートします（ターン1はドローなし）。`);
     setIsSimulatorOpen(true);
+  };
+
+  const startSimulatorForSavedDeck = async (deckId: string) => {
+    try {
+      setLoadingDecks(true);
+      const { data: cardsData, error: cardsError } = await supabase
+        .from('deck_cards')
+        .select('card_id, count')
+        .eq('deck_id', deckId);
+      if (cardsError) throw cardsError;
+
+      const cardById = new Map(cards.map((c) => [c.id, c]));
+      const loadedCards: Card[] = [];
+      (cardsData || []).forEach((row) => {
+        const found = cardById.get(row.card_id);
+        if (found) {
+          for (let i = 0; i < row.count; i++) {
+            loadedCards.push(found);
+          }
+        }
+      });
+
+      if (loadedCards.length === 0) {
+        setDeckMessage({ text: 'このデッキにはカードが入っていないため一人回しを開始できません。', type: 'error' });
+        return;
+      }
+      startSimulator(loadedCards);
+    } catch (err: any) {
+      console.error(err);
+      setDeckMessage({ text: err.message || '一人回しの読み込みに失敗しました。', type: 'error' });
+    } finally {
+      setLoadingDecks(false);
+    }
   };
 
   // ---------------- 呪文詠唱の解決ロジック ----------------
@@ -3296,11 +3330,6 @@ export default function DMApp() {
                               {deck.total_cards}枚
                             </span>
                           </div>
-                          {thumbCard && (
-                            <p className="text-[11px] text-blue-600/90 font-semibold truncate mt-1">
-                              表紙: {thumbCard.name}
-                            </p>
-                          )}
                           <p className="text-[11px] text-slate-400 mt-1">
                             作成日: {new Date(deck.created_at).toLocaleDateString()}
                           </p>
@@ -3309,31 +3338,39 @@ export default function DMApp() {
 
                       {isSelected ? (
                         <div
-                          className="pt-3 mt-3 border-t border-blue-200/80 grid grid-cols-3 gap-1.5"
+                          className="pt-3 mt-3 border-t border-blue-200/80 grid grid-cols-2 sm:grid-cols-4 gap-1.5"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <button
                             type="button"
                             onClick={() => loadDeckToBuilder(deck.id)}
-                            className="py-2 px-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
+                            className="py-2 px-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
                           >
-                            <Edit3 className="h-3.5 w-3.5" />
+                            <Edit3 className="h-3 w-3 shrink-0" />
                             編集
                           </button>
                           <button
                             type="button"
-                            onClick={() => duplicateSavedDeck(deck.id, deck.name)}
-                            className="py-2 px-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
+                            onClick={() => startSimulatorForSavedDeck(deck.id)}
+                            className="py-2 px-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
                           >
-                            <Copy className="h-3.5 w-3.5" />
+                            <Play className="h-3 w-3 shrink-0" />
+                            一人回し
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => duplicateSavedDeck(deck.id, deck.name)}
+                            className="py-2 px-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
+                          >
+                            <Copy className="h-3 w-3 shrink-0" />
                             コピー
                           </button>
                           <button
                             type="button"
                             onClick={() => deleteSavedDeck(deck.id, deck.name)}
-                            className="py-2 px-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
+                            className="py-2 px-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 shadow-sm transition cursor-pointer"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-3 w-3 shrink-0" />
                             削除
                           </button>
                         </div>
