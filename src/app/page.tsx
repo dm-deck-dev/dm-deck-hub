@@ -2684,14 +2684,6 @@ export default function DMApp() {
           <div className="flex items-center gap-3">
             {user ? (
               <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={loadSavedDecks}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition cursor-pointer"
-                >
-                  <FolderOpen className="h-3.5 w-3.5 text-blue-600" />
-                  マイデッキ一覧
-                </button>
                 <span className="text-xs text-slate-600 hidden sm:inline flex items-center gap-1.5 bg-slate-100 py-1.5 px-3 rounded-full font-medium">
                   <UserIcon className="h-3.5 w-3.5 text-slate-500" />
                   {myProfile?.display_name || (user.user_metadata?.display_name as string) || user.email}
