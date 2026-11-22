@@ -5003,7 +5003,7 @@ export default function DMApp() {
 
                   <div className="pt-1 border-t border-slate-100 space-y-1.5">
                     <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold">
-                      <span>専用ゾーン設定（クリックで枠表示＆カード絞り込み）</span>
+                      <span>ゾーン選択（クリックで枠表示＆カード絞り込み）</span>
                       {selectedDeckZoneFilter !== 'all' && (
                         <button
                           type="button"
@@ -5017,17 +5017,45 @@ export default function DMApp() {
                         </button>
                       )}
                     </div>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                       <button
                         type="button"
                         onClick={() => {
-                          const next = !(enabledSpecialZones.hyperspatial || hyperspatialCount > 0);
-                          setEnabledSpecialZones((prev) => ({ ...prev, hyperspatial: next }));
-                          setSelectedDeckZoneFilter(next ? 'hyperspatial' : 'all');
+                          const next = selectedDeckZoneFilter === 'main' ? 'all' : 'main';
+                          setSelectedDeckZoneFilter(next);
                           setCurrentPage(1);
                         }}
                         className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
-                          enabledSpecialZones.hyperspatial || hyperspatialCount > 0
+                          selectedDeckZoneFilter === 'main'
+                            ? 'bg-blue-50 border-blue-400 text-blue-800 ring-1 ring-blue-300 shadow-2xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-blue-300'
+                        }`}
+                      >
+                        <div className="text-[10px] font-black leading-tight">🃏 メイン</div>
+                        <div className="text-[9px] font-bold mt-0.5">
+                          {mainDeckCount} / {MAX_DECK_LIMIT}枚
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const isFiltered = selectedDeckZoneFilter === 'hyperspatial';
+                          if (isFiltered) {
+                            setSelectedDeckZoneFilter('all');
+                            if (hyperspatialCount === 0) {
+                              setEnabledSpecialZones((prev) => ({ ...prev, hyperspatial: false }));
+                            }
+                          } else {
+                            setEnabledSpecialZones((prev) => ({ ...prev, hyperspatial: true }));
+                            setSelectedDeckZoneFilter('hyperspatial');
+                          }
+                          setCurrentPage(1);
+                        }}
+                        className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
+                          selectedDeckZoneFilter === 'hyperspatial'
+                            ? 'bg-indigo-100 border-indigo-400 text-indigo-900 ring-1 ring-indigo-300 shadow-2xs'
+                            : enabledSpecialZones.hyperspatial || hyperspatialCount > 0
                             ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-2xs'
                             : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-indigo-200'
                         }`}
@@ -5041,13 +5069,22 @@ export default function DMApp() {
                       <button
                         type="button"
                         onClick={() => {
-                          const next = !(enabledSpecialZones.gr || grCount > 0);
-                          setEnabledSpecialZones((prev) => ({ ...prev, gr: next }));
-                          setSelectedDeckZoneFilter(next ? 'gr' : 'all');
+                          const isFiltered = selectedDeckZoneFilter === 'gr';
+                          if (isFiltered) {
+                            setSelectedDeckZoneFilter('all');
+                            if (grCount === 0) {
+                              setEnabledSpecialZones((prev) => ({ ...prev, gr: false }));
+                            }
+                          } else {
+                            setEnabledSpecialZones((prev) => ({ ...prev, gr: true }));
+                            setSelectedDeckZoneFilter('gr');
+                          }
                           setCurrentPage(1);
                         }}
                         className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
-                          enabledSpecialZones.gr || grCount > 0
+                          selectedDeckZoneFilter === 'gr'
+                            ? 'bg-amber-100 border-amber-400 text-amber-900 ring-1 ring-amber-300 shadow-2xs'
+                            : enabledSpecialZones.gr || grCount > 0
                             ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-2xs'
                             : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-amber-200'
                         }`}
@@ -5061,13 +5098,22 @@ export default function DMApp() {
                       <button
                         type="button"
                         onClick={() => {
-                          const next = !(enabledSpecialZones.special || specialZoneCount > 0);
-                          setEnabledSpecialZones((prev) => ({ ...prev, special: next }));
-                          setSelectedDeckZoneFilter(next ? 'special' : 'all');
+                          const isFiltered = selectedDeckZoneFilter === 'special';
+                          if (isFiltered) {
+                            setSelectedDeckZoneFilter('all');
+                            if (specialZoneCount === 0) {
+                              setEnabledSpecialZones((prev) => ({ ...prev, special: false }));
+                            }
+                          } else {
+                            setEnabledSpecialZones((prev) => ({ ...prev, special: true }));
+                            setSelectedDeckZoneFilter('special');
+                          }
                           setCurrentPage(1);
                         }}
                         className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
-                          enabledSpecialZones.special || specialZoneCount > 0
+                          selectedDeckZoneFilter === 'special'
+                            ? 'bg-rose-100 border-rose-400 text-rose-900 ring-1 ring-rose-300 shadow-2xs'
+                            : enabledSpecialZones.special || specialZoneCount > 0
                             ? 'bg-rose-50 border-rose-300 text-rose-800 shadow-2xs'
                             : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-rose-200'
                         }`}
