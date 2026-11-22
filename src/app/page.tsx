@@ -241,10 +241,32 @@ export default function DMApp() {
   const [currentPhase, setCurrentPhase] = useState<DuelPhase>('mana');
   const [hasChargedManaThisTurn, setHasChargedManaThisTurn] = useState(false);
 
-  // 墓地確認用モーダル
-  const [graveyardModal, setGraveyardModal] = useState<{
-    title: string;
-    cards: SimCardInstance[];
+  // ゾーン操作モーダル（山札・墓地・マナ）
+  type DeckPeekDestination = 'hand' | 'mana' | 'graveyard' | 'shield' | 'battle';
+  type DeckRemainderHandling = 'bottom_shuffle' | 'bottom_order' | 'top_order' | 'deck_shuffle';
+  type ZoneMoveAction =
+    | 'hand'
+    | 'mana'
+    | 'deck_shuffle_pos'
+    | 'deck_order_pos'
+    | 'deck_all_shuffle'
+    | 'shield'
+    | 'battle';
+
+  const [deckActionModal, setDeckActionModal] = useState<{
+    step: 'config' | 'select';
+    peekCount: number;
+    destination: DeckPeekDestination;
+    peekedCards: SimCardInstance[];
+    selectedIds: string[];
+    remainderHandling: DeckRemainderHandling;
+  } | null>(null);
+
+  const [zoneActionModal, setZoneActionModal] = useState<{
+    zone: 'graveyard' | 'mana';
+    action: ZoneMoveAction;
+    deckPosition: 'top' | 'bottom';
+    selectedIds: string[];
   } | null>(null);
 
   // 呪文の対象選択モーダルステート
@@ -1568,8 +1590,7 @@ export default function DMApp() {
     setHasChargedManaThisTurn(false);
     setHoveredCard(null);
     setSpellTargetModal(null);
-    setGraveyardModal(null);
-
+    
     setSimShields(playerInstances.slice(0, 5));
     setSimHand(playerInstances.slice(5, 10));
     setSimDeck(playerInstances.slice(10));
@@ -1770,6 +1791,187 @@ export default function DMApp() {
     setSimDeck((d) => d.slice(1));
     setSimHand((h) => [...h, drawn]);
     setSimGameMessage(`山札から1枚ドローしました（+${drawn.card.name}）。`);
+  };
+
+  const shuffleSimList = <T,>(arr: T[]): T[] => {
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+
+  const openDeckActionModal = () => {
+    const defaultCount = Math.min(3, Math.max(1, simDeck.length));
+    setDeckActionModal({
+      step: 'config',
+      peekCount: defaultCount,
+      destination: 'hand',
+      peekedCards: [],
+      selectedIds: [],
+      remainderHandling: 'bottom_shuffle',
+    });
+  };
+
+  const startDeckPeek = () => {
+    if (!deckActionModal) return;
+    if (simDeck.length === 0) {
+      setSimGameMessage('山札がありません。');
+      setDeckActionModal(null);
+      return;
+    }
+    const count = Math.min(Math.max(1, deckActionModal.peekCount), simDeck.length);
+    const peeked = simDeck.slice(0, count);
+    setDeckActionModal({
+      ...deckActionModal,
+      step: 'select',
+      peekCount: count,
+      peekedCards: peeked,
+      selectedIds: [],
+    });
+  };
+
+  const toggleDeckPeekSelection = (instanceId: string) => {
+    if (!deckActionModal) return;
+    setDeckActionModal((prev) => {
+      if (!prev) return null;
+      const exists = prev.selectedIds.includes(instanceId);
+      return {
+        ...prev,
+        selectedIds: exists
+          ? prev.selectedIds.filter((id) => id !== instanceId)
+          : [...prev.selectedIds, instanceId],
+      };
+    });
+  };
+
+  const executeDeckPeekAction = () => {
+    if (!deckActionModal) return;
+    const { peekedCards, selectedIds, destination, remainderHandling } = deckActionModal;
+    const selectedCards = selectedIds
+      .map((id) => peekedCards.find((c) => c.instanceId === id))
+      .filter((c): c is SimCardInstance => Boolean(c));
+    const selectedSet = new Set(selectedIds);
+    const remainingPeeked = peekedCards.filter((c) => !selectedSet.has(c.instanceId));
+    const untouchedDeck = simDeck.slice(peekedCards.length);
+
+    if (selectedCards.length > 0) {
+      const cleanCards = selectedCards.map((c) => ({ ...c, isTapped: false }));
+      if (destination === 'hand') {
+        setSimHand((prev) => [...prev, ...cleanCards]);
+      } else if (destination === 'mana') {
+        setSimMana((prev) => [...prev, ...cleanCards]);
+      } else if (destination === 'graveyard') {
+        setSimGraveyard((prev) => [...cleanCards, ...prev]);
+      } else if (destination === 'shield') {
+        setSimShields((prev) => [...prev, ...cleanCards]);
+      } else if (destination === 'battle') {
+        setSimBattleZone((prev) => [
+          ...prev,
+          ...cleanCards.map((c) => ({ ...c, summonedTurn: simTurn })),
+        ]);
+      }
+    }
+
+    let nextDeck: SimCardInstance[] = [];
+    if (remainderHandling === 'bottom_shuffle') {
+      nextDeck = [...untouchedDeck, ...shuffleSimList(remainingPeeked)];
+    } else if (remainderHandling === 'bottom_order') {
+      nextDeck = [...untouchedDeck, ...remainingPeeked];
+    } else if (remainderHandling === 'top_order') {
+      nextDeck = [...remainingPeeked, ...untouchedDeck];
+    } else {
+      nextDeck = shuffleSimList([...untouchedDeck, ...remainingPeeked]);
+    }
+    setSimDeck(nextDeck);
+
+    const destLabelMap: Record<DeckPeekDestination, string> = {
+      hand: '手札',
+      mana: 'マナゾーン',
+      graveyard: '墓地',
+      shield: 'シールド',
+      battle: 'バトルゾーン',
+    };
+    setSimGameMessage(
+      `山札から${peekedCards.length}枚見て、${selectedCards.length}枚を${destLabelMap[destination]}へ送りました。`
+    );
+    setDeckActionModal(null);
+  };
+
+  const openZoneActionModal = (zone: 'graveyard' | 'mana') => {
+    setZoneActionModal({
+      zone,
+      action: 'hand',
+      deckPosition: 'bottom',
+      selectedIds: [],
+    });
+  };
+
+  const toggleZoneSelection = (instanceId: string) => {
+    setZoneActionModal((prev) => {
+      if (!prev) return null;
+      const exists = prev.selectedIds.includes(instanceId);
+      return {
+        ...prev,
+        selectedIds: exists
+          ? prev.selectedIds.filter((id) => id !== instanceId)
+          : [...prev.selectedIds, instanceId],
+      };
+    });
+  };
+
+  const executeZoneMoveAction = () => {
+    if (!zoneActionModal) return;
+    const { zone, action, deckPosition, selectedIds } = zoneActionModal;
+    const sourceList = zone === 'graveyard' ? simGraveyard : simMana;
+    const selectedCards = selectedIds
+      .map((id) => sourceList.find((c) => c.instanceId === id))
+      .filter((c): c is SimCardInstance => Boolean(c));
+
+    if (selectedCards.length === 0) return;
+
+    const selectedSet = new Set(selectedIds);
+    const remainingSource = sourceList.filter((c) => !selectedSet.has(c.instanceId));
+    if (zone === 'graveyard') {
+      setSimGraveyard(remainingSource);
+    } else {
+      setSimMana(remainingSource);
+    }
+
+    const cleanCards = selectedCards.map((c) => ({ ...c, isTapped: false }));
+    const zoneLabel = zone === 'graveyard' ? '墓地' : 'マナ';
+    let detailText = '';
+
+    if (action === 'hand') {
+      setSimHand((prev) => [...prev, ...cleanCards]);
+      detailText = `${selectedCards.length}枚を手札に加えました`;
+    } else if (action === 'mana') {
+      setSimMana((prev) => [...prev, ...cleanCards]);
+      detailText = `${selectedCards.length}枚をマナに加えました`;
+    } else if (action === 'shield') {
+      setSimShields((prev) => [...prev, ...cleanCards]);
+      detailText = `${selectedCards.length}枚をシールドに加えました`;
+    } else if (action === 'battle') {
+      setSimBattleZone((prev) => [
+        ...prev,
+        ...cleanCards.map((c) => ({ ...c, summonedTurn: simTurn })),
+      ]);
+      detailText = `${selectedCards.length}枚をバトルゾーンに出しました`;
+    } else if (action === 'deck_shuffle_pos') {
+      const shuffled = shuffleSimList(cleanCards);
+      setSimDeck((prev) => (deckPosition === 'top' ? [...shuffled, ...prev] : [...prev, ...shuffled]));
+      detailText = `${selectedCards.length}枚をシャッフルし山札の${deckPosition === 'top' ? '上' : '下'}に加えました`;
+    } else if (action === 'deck_order_pos') {
+      setSimDeck((prev) => (deckPosition === 'top' ? [...cleanCards, ...prev] : [...prev, ...cleanCards]));
+      detailText = `${selectedCards.length}枚を指定順で山札の${deckPosition === 'top' ? '上' : '下'}に加えました`;
+    } else if (action === 'deck_all_shuffle') {
+      setSimDeck((prev) => shuffleSimList([...prev, ...cleanCards]));
+      detailText = `${selectedCards.length}枚を山札に加えシャッフルしました`;
+    }
+
+    setSimGameMessage(`${zoneLabel}から${detailText}。`);
+    setZoneActionModal(null);
   };
 
   const breakOwnShield = (shieldInstance: SimCardInstance) => {
@@ -2071,56 +2273,451 @@ export default function DMApp() {
         </div>
       )}
 
-      {/* ---------------- 墓地一覧確認モーダル ---------------- */}
-      {graveyardModal && (
+      {/* ---------------- 山札操作モーダル ---------------- */}
+      {deckActionModal && (
         <div
-          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 cursor-default animate-in fade-in duration-150"
-          onClick={() => setGraveyardModal(null)}
+          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 cursor-default animate-in fade-in duration-150"
+          onClick={() => setDeckActionModal(null)}
         >
           <div
-            className="bg-slate-900 border-2 border-purple-500/80 text-white rounded-3xl max-w-xl w-full p-5 shadow-2xl space-y-4 max-h-[85vh] flex flex-col"
+            className="bg-slate-900 border-2 border-blue-500/80 text-white rounded-3xl max-w-2xl w-full p-4 sm:p-5 shadow-2xl space-y-4 max-h-[88vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800 shrink-0">
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-2">
-                <Skull className="h-5 w-5 text-purple-400" />
-                <h3 className="font-black text-sm">{graveyardModal.title}（{graveyardModal.cards.length}枚）</h3>
+                <DeckIcon className="h-5 w-5 text-blue-400" />
+                <h3 className="font-black text-sm">
+                  山札の操作（残り {simDeck.length}枚）
+                </h3>
               </div>
               <button
                 type="button"
-                onClick={() => setGraveyardModal(null)}
-                className="text-slate-400 hover:text-white"
+                onClick={() => setDeckActionModal(null)}
+                className="text-slate-400 hover:text-white cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 pr-1">
-              {graveyardModal.cards.length === 0 ? (
-                <div className="text-center py-10 text-xs text-slate-500">墓地にカードはありません。</div>
-              ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                  {graveyardModal.cards.map((c, idx) => (
-                    <div
-                      key={`${c.instanceId}-${idx}`}
-                      onMouseEnter={() => setHoveredCard(c.card)}
-                      onMouseLeave={() => setHoveredCard(null)}
-                      className="p-1.5 bg-slate-950 border border-slate-800 hover:border-purple-400 rounded-xl cursor-pointer transition flex flex-col items-center gap-1 group"
-                    >
-                      <div className="aspect-[3/4] w-full rounded overflow-hidden bg-slate-900">
-                        {c.card.image_url ? (
-                          <img src={c.card.image_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition" />
-                        ) : null}
-                      </div>
-                      <span className="text-[8px] font-bold truncate w-full text-center">{c.card.name}</span>
-                    </div>
-                  ))}
+            {deckActionModal.step === 'config' ? (
+              <div className="space-y-4 overflow-y-auto pr-1">
+                {/* クイック基本操作 */}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={simDeck.length === 0}
+                    onClick={() => {
+                      manualDrawOne();
+                      setDeckActionModal(null);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 text-cyan-200 text-xs font-bold disabled:opacity-40 cursor-pointer"
+                  >
+                    1枚ドローする
+                  </button>
+                  <button
+                    type="button"
+                    disabled={simDeck.length <= 1}
+                    onClick={() => {
+                      setSimDeck((prev) => shuffleSimList(prev));
+                      setSimGameMessage('🔀 山札をシャッフルしました。');
+                      setDeckActionModal(null);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold disabled:opacity-40 cursor-pointer"
+                  >
+                    山札をシャッフルする
+                  </button>
                 </div>
-              )}
-            </div>
+
+                {/* 見る枚数指定 */}
+                <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-300">① 山札の上から何枚見ますか？</span>
+                    <span className="text-xs font-black text-white">
+                      {Math.min(deckActionModal.peekCount, simDeck.length)} 枚見る
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                      <button
+                        key={num}
+                        type="button"
+                        disabled={simDeck.length === 0}
+                        onClick={() =>
+                          setDeckActionModal((prev) =>
+                            prev ? { ...prev, peekCount: Math.min(num, Math.max(1, simDeck.length)) } : null
+                          )
+                        }
+                        className={`w-8 h-8 rounded-lg text-xs font-black border transition cursor-pointer ${
+                          deckActionModal.peekCount === num
+                            ? 'bg-blue-600 border-blue-400 text-white'
+                            : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-blue-500'
+                        }`}
+                      >
+                        {num}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      disabled={simDeck.length === 0}
+                      onClick={() =>
+                        setDeckActionModal((prev) =>
+                          prev ? { ...prev, peekCount: Math.max(1, simDeck.length) } : null
+                        )
+                      }
+                      className={`px-2.5 h-8 rounded-lg text-xs font-black border transition cursor-pointer ${
+                        deckActionModal.peekCount === simDeck.length && simDeck.length > 0
+                          ? 'bg-blue-600 border-blue-400 text-white'
+                          : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-blue-500'
+                      }`}
+                    >
+                      山札すべて ({simDeck.length})
+                    </button>
+                  </div>
+                </div>
+
+                {/* 見た後の移動先指定 */}
+                <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-2">
+                  <span className="block text-xs font-bold text-blue-300">② 見たカードから選んでどうしますか？</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {(
+                      [
+                        { key: 'hand', label: 'n枚カードを見て n枚手札に加える' },
+                        { key: 'mana', label: 'n枚カードを見て n枚マナに加える' },
+                        { key: 'graveyard', label: 'n枚カードを見て n枚墓地に加える' },
+                        { key: 'shield', label: 'n枚カードを見て n枚シールドに加える' },
+                        { key: 'battle', label: 'n枚カードを見て n枚バトルゾーンに出す' },
+                      ] as { key: DeckPeekDestination; label: string }[]
+                    ).map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() =>
+                          setDeckActionModal((prev) => (prev ? { ...prev, destination: opt.key } : null))
+                        }
+                        className={`p-2.5 rounded-xl border text-left text-xs font-bold transition cursor-pointer ${
+                          deckActionModal.destination === opt.key
+                            ? 'bg-blue-600/25 border-blue-400 text-white shadow-sm'
+                            : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-600'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={simDeck.length === 0}
+                  onClick={startDeckPeek}
+                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-black text-xs transition shadow-md cursor-pointer"
+                >
+                  山札の上から {Math.min(deckActionModal.peekCount, simDeck.length)} 枚を見る
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col space-y-3 overflow-hidden flex-1">
+                <div className="flex items-center justify-between text-xs bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 shrink-0">
+                  <span className="text-slate-300">
+                    移動先:{' '}
+                    <strong className="text-blue-300">
+                      {
+                        {
+                          hand: '手札に加える',
+                          mana: 'マナに加える',
+                          graveyard: '墓地に加える',
+                          shield: 'シールドに加える',
+                          battle: 'バトルゾーンに出す',
+                        }[deckActionModal.destination]
+                      }
+                    </strong>
+                  </span>
+                  <span className="font-black text-emerald-400">
+                    選択中: {deckActionModal.selectedIds.length} / {deckActionModal.peekedCards.length} 枚
+                  </span>
+                </div>
+
+                <div className="overflow-y-auto flex-1 pr-1">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {deckActionModal.peekedCards.map((c, idx) => {
+                      const selIdx = deckActionModal.selectedIds.indexOf(c.instanceId);
+                      const isSelected = selIdx !== -1;
+                      return (
+                        <div
+                          key={c.instanceId}
+                          onClick={() => toggleDeckPeekSelection(c.instanceId)}
+                          onMouseEnter={() => setHoveredCard(c.card)}
+                          onMouseLeave={() => setHoveredCard(null)}
+                          className={`p-1.5 rounded-xl border-2 cursor-pointer transition flex flex-col items-center gap-1 relative ${
+                            isSelected
+                              ? 'bg-blue-950/60 border-blue-400 shadow-md'
+                              : 'bg-slate-950 border-slate-800 hover:border-slate-600'
+                          }`}
+                        >
+                          <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-bold text-slate-300 z-10">
+                            上から{idx + 1}
+                          </span>
+                          {isSelected && (
+                            <span className="absolute top-1 right-1 w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-black flex items-center justify-center shadow z-10">
+                              {selIdx + 1}
+                            </span>
+                          )}
+                          <div className="aspect-[3/4] w-full rounded overflow-hidden bg-slate-900">
+                            {c.card.image_url ? (
+                              <img src={c.card.image_url} alt="" className="w-full h-full object-cover" />
+                            ) : null}
+                          </div>
+                          <span className="text-[9px] font-bold truncate w-full text-center">{c.card.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 残りのカードの戻し方 */}
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5 shrink-0">
+                  <span className="block text-[11px] font-bold text-slate-300">
+                    選ばなかった残り（{deckActionModal.peekedCards.length - deckActionModal.selectedIds.length}枚）の処理:
+                  </span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(
+                      [
+                        { key: 'bottom_shuffle', label: 'シャッフルして山札の下へ' },
+                        { key: 'bottom_order', label: 'そのままの順で山札の下へ' },
+                        { key: 'top_order', label: 'そのままの順で山札の上へ' },
+                        { key: 'deck_shuffle', label: '山札に戻し全体をシャッフル' },
+                      ] as { key: DeckRemainderHandling; label: string }[]
+                    ).map((rem) => (
+                      <button
+                        key={rem.key}
+                        type="button"
+                        onClick={() =>
+                          setDeckActionModal((prev) => (prev ? { ...prev, remainderHandling: rem.key } : null))
+                        }
+                        className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold transition cursor-pointer ${
+                          deckActionModal.remainderHandling === rem.key
+                            ? 'bg-indigo-600/30 border-indigo-400 text-white'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {rem.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setDeckActionModal((prev) => (prev ? { ...prev, step: 'config' } : null))}
+                    className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold cursor-pointer"
+                  >
+                    戻る
+                  </button>
+                  <button
+                    type="button"
+                    onClick={executeDeckPeekAction}
+                    className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black shadow-md cursor-pointer"
+                  >
+                    確定（{deckActionModal.selectedIds.length}枚を移動する）
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      {/* ---------------- 墓地・マナ操作モーダル ---------------- */}
+      {zoneActionModal && (() => {
+        const isGraveyard = zoneActionModal.zone === 'graveyard';
+        const zoneCards = isGraveyard ? simGraveyard : simMana;
+        const zoneName = isGraveyard ? '墓地' : 'マナゾーン';
+        const needsTopBottom =
+          zoneActionModal.action === 'deck_shuffle_pos' || zoneActionModal.action === 'deck_order_pos';
+
+        const actionOptions: { key: ZoneMoveAction; label: string }[] = isGraveyard
+          ? [
+              { key: 'hand', label: 'n枚手札に加える' },
+              { key: 'mana', label: 'n枚マナに加える' },
+              { key: 'deck_shuffle_pos', label: 'n枚シャッフルし山札（上or下）に加える' },
+              { key: 'deck_order_pos', label: 'n枚順番を指定し山札（上or下）に加える' },
+              { key: 'deck_all_shuffle', label: 'n枚山札に加えシャッフルする' },
+              { key: 'shield', label: 'n枚シールドに加える' },
+              { key: 'battle', label: 'n枚バトルゾーンに出す' },
+            ]
+          : [
+              { key: 'hand', label: 'n枚手札に加える' },
+              { key: 'deck_shuffle_pos', label: 'n枚シャッフルし山札（上or下）に加える' },
+              { key: 'deck_order_pos', label: 'n枚順番を指定し山札（上or下）に加える' },
+              { key: 'deck_all_shuffle', label: 'n枚山札に加えシャッフルする' },
+              { key: 'shield', label: 'n枚シールドに加える' },
+              { key: 'battle', label: 'n枚バトルゾーンに出す' },
+            ];
+
+        return (
+          <div
+            className="fixed inset-0 z-60 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 cursor-default animate-in fade-in duration-150"
+            onClick={() => setZoneActionModal(null)}
+          >
+            <div
+              className={`bg-slate-900 border-2 ${
+                isGraveyard ? 'border-purple-500/80' : 'border-emerald-500/80'
+              } text-white rounded-3xl max-w-2xl w-full p-4 sm:p-5 shadow-2xl space-y-3.5 max-h-[88vh] flex flex-col`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800 shrink-0">
+                <div className="flex items-center gap-2">
+                  <Skull className={`h-5 w-5 ${isGraveyard ? 'text-purple-400' : 'text-emerald-400'}`} />
+                  <h3 className="font-black text-sm">
+                    {zoneName}の操作（{zoneCards.length}枚）
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setZoneActionModal(null)}
+                  className="text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* アクション選択 */}
+              <div className="space-y-2 shrink-0">
+                <span className="block text-[11px] font-bold text-slate-300">① 実行する操作を選択:</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {actionOptions.map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() =>
+                        setZoneActionModal((prev) => (prev ? { ...prev, action: opt.key } : null))
+                      }
+                      className={`px-2.5 py-2 rounded-xl border text-left text-[11px] font-bold transition cursor-pointer ${
+                        zoneActionModal.action === opt.key
+                          ? isGraveyard
+                            ? 'bg-purple-600/30 border-purple-400 text-white'
+                            : 'bg-emerald-600/30 border-emerald-400 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-600'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {needsTopBottom && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] font-bold text-slate-300">山札のどこに加えますか？</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setZoneActionModal((prev) => (prev ? { ...prev, deckPosition: 'top' } : null))
+                      }
+                      className={`px-3 py-1 rounded-lg text-xs font-black border cursor-pointer ${
+                        zoneActionModal.deckPosition === 'top'
+                          ? 'bg-blue-600 border-blue-400 text-white'
+                          : 'bg-slate-950 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      山札の上（トップ）
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setZoneActionModal((prev) => (prev ? { ...prev, deckPosition: 'bottom' } : null))
+                      }
+                      className={`px-3 py-1 rounded-lg text-xs font-black border cursor-pointer ${
+                        zoneActionModal.deckPosition === 'bottom'
+                          ? 'bg-blue-600 border-blue-400 text-white'
+                          : 'bg-slate-950 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      山札の下（ボトム）
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 対象カード複数・順番選択 */}
+              <div className="flex items-center justify-between text-[11px] shrink-0 pt-1 border-t border-slate-800">
+                <span className="font-bold text-slate-300">
+                  ② 対象のカードをタップして選択（選択した順に番号が付きます）:
+                </span>
+                <div className="flex items-center gap-2">
+                  {zoneActionModal.selectedIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setZoneActionModal((prev) => (prev ? { ...prev, selectedIds: [] } : null))
+                      }
+                      className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
+                    >
+                      選択解除
+                    </button>
+                  )}
+                  <span className="font-black text-amber-300">
+                    選択中: {zoneActionModal.selectedIds.length}枚
+                  </span>
+                </div>
+              </div>
+
+              <div className="overflow-y-auto flex-1 pr-1">
+                {zoneCards.length === 0 ? (
+                  <div className="text-center py-10 text-xs text-slate-500">{zoneName}にカードはありません。</div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {zoneCards.map((c, idx) => {
+                      const selIdx = zoneActionModal.selectedIds.indexOf(c.instanceId);
+                      const isSelected = selIdx !== -1;
+                      return (
+                        <div
+                          key={`${c.instanceId}-${idx}`}
+                          onClick={() => toggleZoneSelection(c.instanceId)}
+                          onMouseEnter={() => setHoveredCard(c.card)}
+                          onMouseLeave={() => setHoveredCard(null)}
+                          className={`p-1.5 rounded-xl border-2 cursor-pointer transition flex flex-col items-center gap-1 relative ${
+                            isSelected
+                              ? isGraveyard
+                                ? 'bg-purple-950/60 border-purple-400 shadow-md'
+                                : 'bg-emerald-950/60 border-emerald-400 shadow-md'
+                              : 'bg-slate-950 border-slate-800 hover:border-slate-600'
+                          }`}
+                        >
+                          {isSelected && (
+                            <span className="absolute top-1 right-1 w-5 h-5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black flex items-center justify-center shadow z-10">
+                              {selIdx + 1}
+                            </span>
+                          )}
+                          <div className="aspect-[3/4] w-full rounded overflow-hidden bg-slate-900">
+                            {c.card.image_url ? (
+                              <img src={c.card.image_url} alt="" className="w-full h-full object-cover" />
+                            ) : null}
+                          </div>
+                          <span className="text-[8px] font-bold truncate w-full text-center">{c.card.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                disabled={zoneActionModal.selectedIds.length === 0}
+                onClick={executeZoneMoveAction}
+                className={`w-full py-2.5 rounded-xl font-black text-xs text-white transition shadow-md disabled:opacity-40 shrink-0 cursor-pointer ${
+                  isGraveyard
+                    ? 'bg-purple-600 hover:bg-purple-500'
+                    : 'bg-emerald-600 hover:bg-emerald-500'
+                }`}
+              >
+                選択した {zoneActionModal.selectedIds.length} 枚に対して実行する
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ---------------- 呪文の対象選択モーダル ---------------- */}
       {spellTargetModal && (
@@ -2314,20 +2911,21 @@ export default function DMApp() {
               <div className="grid grid-cols-12 gap-2 items-center shrink-0">
                 <div className="col-span-3 sm:col-span-2 flex gap-1.5 h-24">
                   <div
-                    onClick={manualDrawOne}
-                    title="クリックで1枚ドロー"
+                    onClick={openDeckActionModal}
+                    title="クリックで山札操作メニューを開く"
                     className="flex-1 rounded-xl border border-blue-900/70 bg-blue-950/50 hover:border-blue-400 flex flex-col items-center justify-center text-center p-1 cursor-pointer transition"
                   >
                     <DeckIcon className="h-4 w-4 text-blue-400 mb-0.5" />
                     <span className="text-[9px] text-slate-300 font-bold">山札</span>
                     <span className="text-sm font-black leading-tight text-white">{simDeck.length}</span>
+                    <span className="text-[8px] text-blue-300 font-semibold">操作</span>
                   </div>
 
                   <div
-                    onClick={() => setGraveyardModal({ title: '墓地一覧', cards: simGraveyard })}
+                    onClick={() => openZoneActionModal('graveyard')}
                     onMouseEnter={() => simGraveyard.length > 0 && setHoveredCard(simGraveyard[0].card)}
                     onMouseLeave={() => setHoveredCard(null)}
-                    title="クリックで墓地一覧を表示"
+                    title="クリックで墓地操作メニューを開く"
                     className="flex-1 rounded-xl border border-purple-900/70 bg-purple-950/50 hover:border-purple-400 flex flex-col items-center justify-center text-center p-1 cursor-pointer transition relative overflow-hidden"
                   >
                     {simGraveyard.length > 0 && simGraveyard[0].card.image_url ? (
@@ -2336,14 +2934,21 @@ export default function DMApp() {
                     <Skull className="h-4 w-4 text-purple-400 mb-0.5 relative z-10" />
                     <span className="text-[9px] text-slate-300 font-bold relative z-10">墓地</span>
                     <span className="text-sm font-black leading-tight text-white relative z-10">{simGraveyard.length}</span>
+                    <span className="text-[8px] text-purple-300 font-semibold relative z-10">操作</span>
                   </div>
                 </div>
 
                 <div className="col-span-5 flex flex-col justify-between h-24 bg-slate-900/60 px-2.5 py-1.5 rounded-xl border border-slate-800">
-                  <div className="flex justify-between text-[10px] text-emerald-400 font-bold leading-none">
-                    <span>マナゾーン（クリックでタップ切替）</span>
-                    <span>
-                      使用可能: {simMana.filter((c) => !c.isTapped).length} / {simMana.length}
+                  <div className="flex items-center justify-between gap-1 text-[10px] text-emerald-400 font-bold leading-none">
+                    <button
+                      type="button"
+                      onClick={() => openZoneActionModal('mana')}
+                      className="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-300 font-extrabold transition cursor-pointer shrink-0"
+                    >
+                      マナ操作 ▾
+                    </button>
+                    <span className="truncate">
+                      使用可: {simMana.filter((c) => !c.isTapped).length}/{simMana.length}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 overflow-x-auto h-16 pt-1">
