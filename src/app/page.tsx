@@ -52,6 +52,49 @@ const DEFAULT_CARDS: Card[] = [];
 
 const MAX_DECK_LIMIT = 60;
 const BASE_DECK_LIMIT = 40;
+const MAX_HYPERSPATIAL_LIMIT = 8;
+const MAX_GR_LIMIT = 12;
+
+type DeckZoneCategory = 'main' | 'hyperspatial' | 'gr' | 'special';
+
+const getCardDeckZone = (card: Card): DeckZoneCategory => {
+  const ct = (card.card_type || '').normalize('NFKC');
+  const nm = (card.name || '').normalize('NFKC');
+  const races = Array.isArray(card.race) ? card.race.join(' ').normalize('NFKC') : '';
+
+  // GRゾーン（ガチャレンジ）
+  if (ct.includes('GR') || ct.includes('ガチャレンジ') || races.includes('GR')) {
+    return 'gr';
+  }
+
+  // 超次元ゾーン（サイキック / ドラグハート）
+  if (
+    ct.includes('サイキック') ||
+    ct.includes('ドラグハート') ||
+    ct.includes('超次元') ||
+    races.includes('サイキック') ||
+    races.includes('ドラグハート')
+  ) {
+    return 'hyperspatial';
+  }
+
+  // 禁断 / ドルマゲドン / ゼーロン専用ゾーン
+  if (
+    ct.includes('禁断') ||
+    ct.includes('零龍') ||
+    ct.includes('ドルマゲドン') ||
+    nm.includes('禁断 ～封印されしX～') ||
+    nm.includes('伝説の禁断 ドキンダムX') ||
+    nm.includes('FORBIDDEN STAR') ||
+    nm.includes('終焉の禁断 ドルマゲドンX') ||
+    nm.includes('滅亡の起源 零無') ||
+    nm.includes('零龍')
+  ) {
+    return 'special';
+  }
+
+  return 'main';
+};
 const CARDS_PER_PAGE = 50;
 const CARDS_CACHE_KEY = 'dm_deck_hub_cards_cache_v7';
 const CARDS_CACHE_TTL_MS = 1000 * 60 * 30; // 30分間キャッシュを有効化
@@ -285,6 +328,20 @@ export default function DMApp() {
   const [simBattleZone, setSimBattleZone] = useState<SimCardInstance[]>([]);
   const [simMana, setSimMana] = useState<SimCardInstance[]>([]);
   const [simGraveyard, setSimGraveyard] = useState<SimCardInstance[]>([]);
+
+  // 特殊外部ゾーン（超次元・GR・禁断/ドルマゲドン/ゼーロン）
+  const [simHyperspatial, setSimHyperspatial] = useState<SimCardInstance[]>([]);
+  const [simGrZone, setSimGrZone] = useState<SimCardInstance[]>([]);
+  const [simSpecialZone, setSimSpecialZone] = useState<SimCardInstance[]>([]);
+  const [simSeals, setSimSeals] = useState<SimCardInstance[]>([]);
+  const [simSpecialLiberated, setSimSpecialLiberated] = useState<boolean>(false);
+  const [simZeronRituals, setSimZeronRituals] = useState<{
+    resurrection: boolean;
+    graveyard: boolean;
+    hand: boolean;
+    destruction: boolean;
+  }>({ resurrection: false, graveyard: false, hand: false, destruction: false });
+  const [externalZoneModal, setExternalZoneModal] = useState<'hyperspatial' | 'gr' | 'special' | null>(null);
 
   const [simGameMessage, setSimGameMessage] = useState<string | null>(null);
 
@@ -877,16 +934,39 @@ export default function DMApp() {
     return map;
   }, [deckCards, cards, normalizeDeckCardName]);
 
-  const flattenedDeckCards = useMemo(() => {
-    const list: Card[] = [];
+  const deckCardsByZone = useMemo(() => {
+    const main: Card[] = [];
+    const hyperspatial: Card[] = [];
+    const gr: Card[] = [];
+    const special: Card[] = [];
+    const cardById = new Map(cards.map((c) => [c.id, c]));
+
     Object.entries(deckCards).forEach(([cardId, count]) => {
-      const card = cards.find((c) => c.id === cardId);
-      if (card) {
-        for (let i = 0; i < count; i++) list.push(card);
+      const card = cardById.get(cardId);
+      if (!card) return;
+      const zone = getCardDeckZone(card);
+      for (let i = 0; i < count; i++) {
+        if (zone === 'hyperspatial') hyperspatial.push(card);
+        else if (zone === 'gr') gr.push(card);
+        else if (zone === 'special') special.push(card);
+        else main.push(card);
       }
     });
-    return list.sort((a, b) => (a.cost || 0) - (b.cost || 0));
+
+    const sorter = (a: Card, b: Card) => (a.cost || 0) - (b.cost || 0);
+    return {
+      main: main.sort(sorter),
+      hyperspatial: hyperspatial.sort(sorter),
+      gr: gr.sort(sorter),
+      special: special.sort(sorter),
+    };
   }, [deckCards, cards]);
+
+  const flattenedDeckCards = deckCardsByZone.main;
+  const mainDeckCount = deckCardsByZone.main.length;
+  const hyperspatialCount = deckCardsByZone.hyperspatial.length;
+  const grCount = deckCardsByZone.gr.length;
+  const specialZoneCount = deckCardsByZone.special.length;
 
   const ownershipData = useMemo(() => {
     let ownedInDeckCount = 0;
@@ -1216,29 +1296,49 @@ export default function DMApp() {
   };
 
   const addCardToDeck = (card: Card) => {
+    const zone = getCardDeckZone(card);
     const targetNameKey = normalizeDeckCardName(card.name);
     const sameNameTotal = deckCardNameCounts[targetNameKey] || 0;
-    if (totalDeckCardCount >= MAX_DECK_LIMIT) {
-      setDeckMessage({ text: `デッキは最大${MAX_DECK_LIMIT}枚までです。`, type: 'error' });
-      return;
+
+    if (zone === 'hyperspatial') {
+      if (hyperspatialCount >= MAX_HYPERSPATIAL_LIMIT) {
+        setDeckMessage({ text: `超次元ゾーンは最大${MAX_HYPERSPATIAL_LIMIT}枚までです。`, type: 'error' });
+        return;
+      }
+      if (sameNameTotal >= 4) {
+        setDeckMessage({ text: `「${card.name}」は同名カードのため合計4枚までです。`, type: 'error' });
+        return;
+      }
+    } else if (zone === 'gr') {
+      if (grCount >= MAX_GR_LIMIT) {
+        setDeckMessage({ text: `GRゾーンは最大${MAX_GR_LIMIT}枚までです。`, type: 'error' });
+        return;
+      }
+      if (sameNameTotal >= 2) {
+        setDeckMessage({ text: `GRカード「${card.name}」は同名2枚までしか入れられません。`, type: 'error' });
+        return;
+      }
+    } else if (zone === 'special') {
+      if (sameNameTotal >= 1) {
+        setDeckMessage({ text: `禁断／ドルマゲドン／ゼーロンカード「${card.name}」は1枚（1セット）までです。`, type: 'error' });
+        return;
+      }
+      if (specialZoneCount >= 5) {
+        setDeckMessage({ text: '禁断／ドルマゲドン／ゼーロン専用ゾーンの上限に達しています。', type: 'error' });
+        return;
+      }
+    } else {
+      if (mainDeckCount >= MAX_DECK_LIMIT) {
+        setDeckMessage({ text: `メインデッキは最大${MAX_DECK_LIMIT}枚までです。`, type: 'error' });
+        return;
+      }
+      if (sameNameTotal >= 4) {
+        setDeckMessage({ text: `「${card.name}」は同名カードのため合計4枚までしか入れられません。`, type: 'error' });
+        return;
+      }
     }
-    if (sameNameTotal >= 4) {
-      setDeckMessage({ text: `「${card.name}」は同名カードのため合計4枚までしか入れられません。`, type: 'error' });
-      return;
-    }
-    setDeckCards((prev) => {
-      const prevTotal = Object.values(prev).reduce((acc, c) => acc + c, 0);
-      if (prevTotal >= MAX_DECK_LIMIT) return prev;
-      let prevSameName = 0;
-      Object.entries(prev).forEach(([id, c]) => {
-        const found = cards.find((item) => item.id === id);
-        if (found && normalizeDeckCardName(found.name) === targetNameKey) {
-          prevSameName += c;
-        }
-      });
-      if (prevSameName >= 4) return prev;
-      return { ...prev, [card.id]: (prev[card.id] || 0) + 1 };
-    });
+
+    setDeckCards((prev) => ({ ...prev, [card.id]: (prev[card.id] || 0) + 1 }));
     setDeckMessage(null);
   };
 
@@ -1569,20 +1669,50 @@ export default function DMApp() {
 
   // ---------------- 一人回しシミュレーター開始 ----------------
   const startSimulator = (overrideCards?: unknown) => {
-    const sourceCards = Array.isArray(overrideCards) ? (overrideCards as Card[]) : flattenedDeckCards;
-    if (sourceCards.length === 0) {
-      setDeckMessage({ text: '一人回しを開始するには最低1枚以上のカードが必要です。', type: 'error' });
+    const allSourceCards: Card[] = Array.isArray(overrideCards)
+      ? (overrideCards as Card[])
+      : [
+          ...deckCardsByZone.main,
+          ...deckCardsByZone.hyperspatial,
+          ...deckCardsByZone.gr,
+          ...deckCardsByZone.special,
+        ];
+
+    const mainCards = allSourceCards.filter((c) => getCardDeckZone(c) === 'main');
+    const hyperCards = allSourceCards.filter((c) => getCardDeckZone(c) === 'hyperspatial');
+    const grCards = allSourceCards.filter((c) => getCardDeckZone(c) === 'gr');
+    const specialCards = allSourceCards.filter((c) => getCardDeckZone(c) === 'special');
+
+    if (mainCards.length === 0) {
+      setDeckMessage({ text: '一人回しを開始するにはメインデッキに最低1枚以上のカードが必要です。', type: 'error' });
       return;
     }
-    const playerInstances: SimCardInstance[] = sourceCards.map((c, i) => ({
-      instanceId: `p-${c.id}-${i}-${Math.random()}`,
-      card: c,
-      isTapped: false,
-      summonedTurn: 0,
-    }));
-    for (let i = playerInstances.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [playerInstances[i], playerInstances[j]] = [playerInstances[j], playerInstances[i]];
+
+    const toInstances = (list: Card[], prefix: string): SimCardInstance[] =>
+      list.map((c, i) => ({
+        instanceId: `${prefix}-${c.id}-${i}-${Math.random()}`,
+        card: c,
+        isTapped: false,
+        summonedTurn: 0,
+      }));
+
+    const shuffledMain = shuffleSimList(toInstances(mainCards, 'main'));
+    const hyperInstances = toInstances(hyperCards, 'hs');
+    const shuffledGr = shuffleSimList(toInstances(grCards, 'gr'));
+    const specialInstances = toInstances(specialCards, 'sp');
+
+    const shields = shuffledMain.slice(0, 5);
+    const hand = shuffledMain.slice(5, 10);
+    let remainingDeck = shuffledMain.slice(10);
+
+    // 禁断・ドルマゲドンがある場合は山札の上から4枚を封印としてセット
+    const hasSealedSpecial = specialInstances.some((inst) => {
+      const text = `${inst.card.name} ${inst.card.card_type}`.normalize('NFKC');
+      return text.includes('禁断') || text.includes('ドキンダム') || text.includes('ドルマゲドン') || text.includes('FORBIDDEN');
+    });
+    const initialSeals = hasSealedSpecial ? remainingDeck.slice(0, Math.min(4, remainingDeck.length)) : [];
+    if (initialSeals.length > 0) {
+      remainingDeck = remainingDeck.slice(initialSeals.length);
     }
 
     setSimTurn(1);
@@ -1590,16 +1720,103 @@ export default function DMApp() {
     setHasChargedManaThisTurn(false);
     setHoveredCard(null);
     setSpellTargetModal(null);
-    
-    setSimShields(playerInstances.slice(0, 5));
-    setSimHand(playerInstances.slice(5, 10));
-    setSimDeck(playerInstances.slice(10));
+    setExternalZoneModal(null);
+
+    setSimShields(shields);
+    setSimHand(hand);
+    setSimDeck(remainingDeck);
     setSimBattleZone([]);
     setSimMana([]);
     setSimGraveyard([]);
 
-    setSimGameMessage(`一人回し開始！手札5枚・シールド5枚でスタートします（ターン1はドローなし）。`);
+    setSimHyperspatial(hyperInstances);
+    setSimGrZone(shuffledGr);
+    setSimSpecialZone(specialInstances);
+    setSimSeals(initialSeals);
+    setSimSpecialLiberated(false);
+    setSimZeronRituals({ resurrection: false, graveyard: false, hand: false, destruction: false });
+
+    const extraNotes: string[] = [];
+    if (hyperInstances.length > 0) extraNotes.push(`超次元${hyperInstances.length}枚`);
+    if (shuffledGr.length > 0) extraNotes.push(`GR${shuffledGr.length}枚`);
+    if (specialInstances.length > 0) {
+      extraNotes.push(
+        initialSeals.length > 0
+          ? `禁断/ドルマゲドン（封印${initialSeals.length}枚セット済）`
+          : `ゼーロン/特殊ゾーン${specialInstances.length}枚`
+      );
+    }
+
+    setSimGameMessage(
+      `一人回し開始！手札5枚・シールド5枚でスタート${extraNotes.length > 0 ? `（${extraNotes.join(' / ')}）` : ''}。`
+    );
     setIsSimulatorOpen(true);
+  };
+
+  // 超次元・GR・禁断/ドルマゲドン/ゼーロン専用アクション
+  const summonFromHyperspatial = (inst: SimCardInstance) => {
+    setSimHyperspatial((prev) => prev.filter((c) => c.instanceId !== inst.instanceId));
+    setSimBattleZone((prev) => [...prev, { ...inst, isTapped: false, summonedTurn: simTurn }]);
+    setSimGameMessage(`🌌 超次元ゾーンから「${inst.card.name}」をバトルゾーンに出しました！`);
+  };
+
+  const returnBattleCardToExternal = (inst: SimCardInstance) => {
+    const zone = getCardDeckZone(inst.card);
+    setSimBattleZone((prev) => prev.filter((c) => c.instanceId !== inst.instanceId));
+    if (zone === 'hyperspatial') {
+      setSimHyperspatial((prev) => [...prev, { ...inst, isTapped: false }]);
+      setSimGameMessage(`🌌 「${inst.card.name}」を超次元ゾーンに戻しました。`);
+    } else if (zone === 'gr') {
+      setSimGrZone((prev) => [...prev, { ...inst, isTapped: false }]);
+      setSimGameMessage(`🎲 「${inst.card.name}」をGRゾーンの一番下に戻しました。`);
+    } else if (zone === 'special') {
+      setSimSpecialZone((prev) => [...prev, { ...inst, isTapped: false }]);
+      setSimSpecialLiberated(false);
+      setSimGameMessage(`🔥 「${inst.card.name}」を専用ゾーンに戻しました。`);
+    }
+  };
+
+  const summonGrTop = () => {
+    if (simGrZone.length === 0) {
+      setSimGameMessage('GRゾーンにカードがありません。');
+      return;
+    }
+    const top = simGrZone[0];
+    setSimGrZone((prev) => prev.slice(1));
+    setSimBattleZone((prev) => [...prev, { ...top, isTapped: false, summonedTurn: simTurn }]);
+    setSimGameMessage(`🎲 GR召喚！「${top.card.name}」がバトルゾーンに出ました！`);
+  };
+
+  const summonGrSpecific = (inst: SimCardInstance) => {
+    setSimGrZone((prev) => prev.filter((c) => c.instanceId !== inst.instanceId));
+    setSimBattleZone((prev) => [...prev, { ...inst, isTapped: false, summonedTurn: simTurn }]);
+    setSimGameMessage(`🎲 GRゾーンから「${inst.card.name}」をバトルゾーンに出しました！`);
+  };
+
+  const removeOneSeal = () => {
+    if (simSeals.length === 0) {
+      setSimGameMessage('外せる封印がありません。');
+      return;
+    }
+    const removed = simSeals[0];
+    const nextSeals = simSeals.slice(1);
+    setSimSeals(nextSeals);
+    setSimGraveyard((prev) => [removed, ...prev]);
+    if (nextSeals.length === 0) {
+      setSimGameMessage(`💥 最後の封印「${removed.card.name}」が外れました！禁断解放が可能です！`);
+    } else {
+      setSimGameMessage(`🔓 封印を1枚墓地に置きました（-${removed.card.name} / 残り封印: ${nextSeals.length}枚）。`);
+    }
+  };
+
+  const liberateSpecialZone = () => {
+    if (simSpecialZone.length === 0) return;
+    const toMove = simSpecialZone.map((c) => ({ ...c, isTapped: false, summonedTurn: simTurn }));
+    setSimSpecialZone([]);
+    setSimBattleZone((prev) => [...prev, ...toMove]);
+    setSimSpecialLiberated(true);
+    setSimGameMessage(`🔥 禁断解放／零龍卍誕！「${toMove.map((c) => c.card.name).join(' / ')}」がバトルゾーンに降臨しました！`);
+    setExternalZoneModal(null);
   };
 
   const startSimulatorForSavedDeck = async (deckId: string) => {
@@ -2780,6 +2997,237 @@ export default function DMApp() {
         </div>
       )}
 
+      {/* ---------------- 超次元・GR・禁断/ドルマゲドン/ゼーロン専用モーダル ---------------- */}
+      {externalZoneModal && (
+        <div
+          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 cursor-default animate-in fade-in duration-150"
+          onClick={() => setExternalZoneModal(null)}
+        >
+          <div
+            className={`bg-slate-900 border-2 ${
+              externalZoneModal === 'hyperspatial'
+                ? 'border-indigo-500/80'
+                : externalZoneModal === 'gr'
+                ? 'border-amber-500/80'
+                : 'border-rose-500/80'
+            } text-white rounded-3xl max-w-2xl w-full p-4 sm:p-5 shadow-2xl space-y-4 max-h-[88vh] flex flex-col`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800 shrink-0">
+              <h3 className="font-black text-sm flex items-center gap-2">
+                {externalZoneModal === 'hyperspatial' && (
+                  <span className="text-indigo-300">🌌 超次元ゾーン（残り {simHyperspatial.length}枚）</span>
+                )}
+                {externalZoneModal === 'gr' && (
+                  <span className="text-amber-300">🎲 GRゾーン（残り {simGrZone.length}枚）</span>
+                )}
+                {externalZoneModal === 'special' && (
+                  <span className="text-rose-300">🔥 禁断 / ドルマゲドン / ゼーロン専用ゾーン</span>
+                )}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setExternalZoneModal(null)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {externalZoneModal === 'hyperspatial' && (
+              <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+                <p className="text-xs text-slate-300">
+                  クリックしたサイキック／ドラグハートをバトルゾーンに出します：
+                </p>
+                {simHyperspatial.length === 0 ? (
+                  <div className="text-center py-10 text-xs text-slate-500">超次元ゾーンにカードがありません。</div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+                    {simHyperspatial.map((c) => (
+                      <div
+                        key={c.instanceId}
+                        onClick={() => summonFromHyperspatial(c)}
+                        onMouseEnter={() => setHoveredCard(c.card)}
+                        onMouseLeave={() => setHoveredCard(null)}
+                        className="p-1.5 bg-slate-950 border border-indigo-800/80 hover:border-indigo-400 rounded-xl cursor-pointer transition flex flex-col items-center gap-1 group"
+                      >
+                        <div className="aspect-[3/4] w-full rounded overflow-hidden bg-slate-900">
+                          {c.card.image_url ? (
+                            <img src={c.card.image_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition" />
+                          ) : null}
+                        </div>
+                        <span className="text-[9px] font-bold truncate w-full text-center">{c.card.name}</span>
+                        <span className="w-full py-0.5 rounded bg-indigo-600 text-center text-[9px] font-black text-white">
+                          場に出す
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {externalZoneModal === 'gr' && (
+              <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={simGrZone.length === 0}
+                    onClick={() => {
+                      summonGrTop();
+                      setExternalZoneModal(null);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-xs shadow cursor-pointer"
+                  >
+                    🎲 GR召喚（上から1枚出す）
+                  </button>
+                  <button
+                    type="button"
+                    disabled={simGrZone.length <= 1}
+                    onClick={() => {
+                      setSimGrZone((prev) => shuffleSimList(prev));
+                      setSimGameMessage('🔀 GRゾーンをシャッフルしました。');
+                    }}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs disabled:opacity-40 cursor-pointer"
+                  >
+                    GRゾーンをシャッフル
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-slate-400">
+                  カードをクリックすると任意のGRクリーチャーを直接バトルゾーンに出せます（上から順に表示）：
+                </p>
+
+                {simGrZone.length === 0 ? (
+                  <div className="text-center py-10 text-xs text-slate-500">GRゾーンにカードがありません。</div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+                    {simGrZone.map((c, idx) => (
+                      <div
+                        key={c.instanceId}
+                        onClick={() => summonGrSpecific(c)}
+                        onMouseEnter={() => setHoveredCard(c.card)}
+                        onMouseLeave={() => setHoveredCard(null)}
+                        className="p-1.5 bg-slate-950 border border-amber-800/70 hover:border-amber-400 rounded-xl cursor-pointer transition flex flex-col items-center gap-1 relative group"
+                      >
+                        <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-bold text-amber-300 z-10">
+                          #{idx + 1}
+                        </span>
+                        <div className="aspect-[3/4] w-full rounded overflow-hidden bg-slate-900">
+                          {c.card.image_url ? (
+                            <img src={c.card.image_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition" />
+                          ) : null}
+                        </div>
+                        <span className="text-[9px] font-bold truncate w-full text-center">{c.card.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {externalZoneModal === 'special' && (
+              <div className="space-y-4 overflow-y-auto flex-1 pr-1">
+                {/* 登録カード表示 */}
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                  {simSpecialZone.map((c) => (
+                    <div
+                      key={c.instanceId}
+                      onMouseEnter={() => setHoveredCard(c.card)}
+                      onMouseLeave={() => setHoveredCard(null)}
+                      className="p-1.5 bg-slate-950 border border-rose-800/80 rounded-xl flex flex-col items-center gap-1"
+                    >
+                      <div className="aspect-[3/4] w-full rounded overflow-hidden bg-slate-900">
+                        {c.card.image_url ? (
+                          <img src={c.card.image_url} alt="" className="w-full h-full object-cover" />
+                        ) : null}
+                      </div>
+                      <span className="text-[8px] font-bold truncate w-full text-center">{c.card.name}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 封印ギミック（禁断 / ドルマゲドンX用） */}
+                <div className="p-3.5 rounded-2xl bg-slate-950 border border-rose-900/60 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-rose-300">禁断・ドルマゲドン 封印管理</span>
+                    <span className="px-2 py-0.5 rounded bg-rose-950 border border-rose-700 text-rose-200 text-xs font-black">
+                      残り封印: {simSeals.length} 枚
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={simSeals.length === 0}
+                      onClick={removeOneSeal}
+                      className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white text-xs font-black cursor-pointer"
+                    >
+                      🔓 封印を1枚外す（墓地へ置く）
+                    </button>
+                    <button
+                      type="button"
+                      disabled={simDeck.length === 0}
+                      onClick={() => {
+                        const top = simDeck[0];
+                        setSimDeck((prev) => prev.slice(1));
+                        setSimSeals((prev) => [top, ...prev]);
+                        setSimGameMessage('🔒 山札の上から1枚を封印として付けました。');
+                      }}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold disabled:opacity-40 cursor-pointer"
+                    >
+                      + 封印を1枚付ける
+                    </button>
+                  </div>
+                </div>
+
+                {/* ゼーロン 4つの儀トグル */}
+                <div className="p-3.5 rounded-2xl bg-slate-950 border border-purple-900/60 space-y-2">
+                  <span className="block text-xs font-black text-purple-300">零龍（ゼーロン）4つの儀の達成状況</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(
+                      [
+                        { key: 'resurrection', label: '復活の儀' },
+                        { key: 'graveyard', label: '墓地の儀' },
+                        { key: 'hand', label: '手札の儀' },
+                        { key: 'destruction', label: '破壊の儀' },
+                      ] as const
+                    ).map((ritual) => {
+                      const done = simZeronRituals[ritual.key];
+                      return (
+                        <button
+                          key={ritual.key}
+                          type="button"
+                          onClick={() =>
+                            setSimZeronRituals((prev) => ({ ...prev, [ritual.key]: !prev[ritual.key] }))
+                          }
+                          className={`py-2 px-2 rounded-xl border text-xs font-black transition cursor-pointer ${
+                            done
+                              ? 'bg-purple-600 border-purple-300 text-white shadow'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-purple-600'
+                          }`}
+                        >
+                          {done ? `✓ ${ritual.label}` : ritual.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 禁断解放 / 零龍卍誕 実行ボタン */}
+                <button
+                  type="button"
+                  disabled={simSpecialZone.length === 0}
+                  onClick={liberateSpecialZone}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 disabled:opacity-40 text-white font-black text-xs shadow-lg cursor-pointer"
+                >
+                  🔥 禁断解放 ／ 零龍卍誕（バトルゾーンへ降臨させる）
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ---------------- 一人回しシミュレーター ---------------- */}
       {isSimulatorOpen && (
         <div
@@ -2805,7 +3253,7 @@ export default function DMApp() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   type="button"
                   onClick={manualDrawOne}
@@ -2813,6 +3261,46 @@ export default function DMApp() {
                 >
                   +1枚ドロー
                 </button>
+
+                {simHyperspatial.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setExternalZoneModal('hyperspatial')}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-600/70 text-[11px] font-extrabold transition cursor-pointer"
+                  >
+                    🌌 超次元({simHyperspatial.length})
+                  </button>
+                )}
+
+                {simGrZone.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={summonGrTop}
+                      className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black transition cursor-pointer"
+                    >
+                      🎲 GR召喚({simGrZone.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExternalZoneModal('gr')}
+                      title="GRゾーン一覧を見る"
+                      className="px-1.5 py-1 rounded-lg bg-amber-950 hover:bg-amber-900 text-amber-300 border border-amber-600/70 text-[10px] font-bold transition cursor-pointer"
+                    >
+                      一覧
+                    </button>
+                  </div>
+                )}
+
+                {(simSpecialZone.length > 0 || simSeals.length > 0 || simSpecialLiberated) && (
+                  <button
+                    type="button"
+                    onClick={() => setExternalZoneModal('special')}
+                    className="px-2.5 py-1 rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-500/80 text-[11px] font-extrabold transition cursor-pointer"
+                  >
+                    🔥 禁断/零龍{simSeals.length > 0 ? `(封印${simSeals.length})` : ''}
+                  </button>
+                )}
 
                 <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
                   {PHASES.map((p) => (
@@ -2902,6 +3390,15 @@ export default function DMApp() {
                             {c.card.power ?? '-'}
                           </span>
                         </div>
+                        {getCardDeckZone(c.card) !== 'main' && (
+                          <button
+                            type="button"
+                            onClick={() => returnBattleCardToExternal(c)}
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[9px] font-bold text-slate-200 cursor-pointer"
+                          >
+                            専用ゾーンへ戻す
+                          </button>
+                        )}
                       </div>
                     ))
                   )}
@@ -4474,23 +4971,43 @@ export default function DMApp() {
 
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-500">デッキ枚数:</span>
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${totalDeckCardCount >= BASE_DECK_LIMIT ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {totalDeckCardCount >= BASE_DECK_LIMIT ? `${totalDeckCardCount}枚 構築完了` : `${totalDeckCardCount}枚 / 一時保存可`}
+                      <span className="font-bold text-slate-500">メインデッキ:</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${mainDeckCount >= BASE_DECK_LIMIT ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {mainDeckCount >= BASE_DECK_LIMIT ? `${mainDeckCount}枚 構築完了` : `${mainDeckCount}枚 / 一時保存可`}
                       </span>
                     </div>
-                    <span className={`font-black text-xs ${totalDeckCardCount >= BASE_DECK_LIMIT ? 'text-emerald-600 flex items-center gap-1' : 'text-blue-600'}`}>
-                      {totalDeckCardCount} / {MAX_DECK_LIMIT}枚
-                      {totalDeckCardCount >= BASE_DECK_LIMIT && <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />}
+                    <span className={`font-black text-xs ${mainDeckCount >= BASE_DECK_LIMIT ? 'text-emerald-600 flex items-center gap-1' : 'text-blue-600'}`}>
+                      {mainDeckCount} / {MAX_DECK_LIMIT}枚
+                      {mainDeckCount >= BASE_DECK_LIMIT && <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />}
                     </span>
                   </div>
 
                   <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                     <div
-                      className={`h-full transition-all duration-300 ${totalDeckCardCount >= BASE_DECK_LIMIT ? 'bg-emerald-500' : 'bg-blue-600'}`}
-                      style={{ width: `${Math.min(100, (totalDeckCardCount / MAX_DECK_LIMIT) * 100)}%` }}
+                      className={`h-full transition-all duration-300 ${mainDeckCount >= BASE_DECK_LIMIT ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                      style={{ width: `${Math.min(100, (mainDeckCount / MAX_DECK_LIMIT) * 100)}%` }}
                     />
                   </div>
+
+                  {(hyperspatialCount > 0 || grCount > 0 || specialZoneCount > 0) && (
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {hyperspatialCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-extrabold">
+                          超次元: {hyperspatialCount}/{MAX_HYPERSPATIAL_LIMIT}枚
+                        </span>
+                      )}
+                      {grCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-extrabold">
+                          GR: {grCount}/{MAX_GR_LIMIT}枚
+                        </span>
+                      )}
+                      {specialZoneCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-extrabold">
+                          禁断/零龍/ドルマゲドン: {specialZoneCount}枚
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-100 space-y-1.5">
@@ -4642,6 +5159,91 @@ export default function DMApp() {
                               </div>
                             ))}
                         </div>
+
+                        {/* 外部ゾーン専用枠（超次元 / GR / 禁断・ドルマゲドン・ゼーロン） */}
+                        {deckCardsByZone.hyperspatial.length > 0 && (
+                          <div className="mt-2 p-1.5 rounded-xl bg-indigo-50/70 border border-indigo-200/80">
+                            <div className="flex items-center justify-between text-[10px] font-extrabold text-indigo-700 mb-1">
+                              <span>超次元ゾーン</span>
+                              <span>{deckCardsByZone.hyperspatial.length} / {MAX_HYPERSPATIAL_LIMIT}枚</span>
+                            </div>
+                            <div className="grid grid-cols-8 gap-1">
+                              {deckCardsByZone.hyperspatial.map((card, idx) => (
+                                <div
+                                  key={`hs-${card.id}-${idx}`}
+                                  onClick={() => removeCardFromDeck(card.id)}
+                                  title={`${card.name}（クリックで1枚減らす）`}
+                                  className="group relative aspect-[3/4] rounded overflow-hidden border border-indigo-300 bg-white cursor-pointer hover:border-red-400"
+                                >
+                                  {card.image_url ? (
+                                    <img src={card.image_url} alt={card.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="text-[6px] text-slate-400 flex items-center justify-center h-full">No Img</div>
+                                  )}
+                                  <div className="absolute inset-0 bg-red-600/75 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
+                                    <Minus className="h-3 w-3" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {deckCardsByZone.gr.length > 0 && (
+                          <div className="mt-2 p-1.5 rounded-xl bg-amber-50/70 border border-amber-200/80">
+                            <div className="flex items-center justify-between text-[10px] font-extrabold text-amber-800 mb-1">
+                              <span>GRゾーン</span>
+                              <span>{deckCardsByZone.gr.length} / {MAX_GR_LIMIT}枚</span>
+                            </div>
+                            <div className="grid grid-cols-8 gap-1">
+                              {deckCardsByZone.gr.map((card, idx) => (
+                                <div
+                                  key={`gr-${card.id}-${idx}`}
+                                  onClick={() => removeCardFromDeck(card.id)}
+                                  title={`${card.name}（クリックで1枚減らす）`}
+                                  className="group relative aspect-[3/4] rounded overflow-hidden border border-amber-300 bg-white cursor-pointer hover:border-red-400"
+                                >
+                                  {card.image_url ? (
+                                    <img src={card.image_url} alt={card.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="text-[6px] text-slate-400 flex items-center justify-center h-full">No Img</div>
+                                  )}
+                                  <div className="absolute inset-0 bg-red-600/75 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
+                                    <Minus className="h-3 w-3" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {deckCardsByZone.special.length > 0 && (
+                          <div className="mt-2 p-1.5 rounded-xl bg-rose-50/70 border border-rose-200/80">
+                            <div className="flex items-center justify-between text-[10px] font-extrabold text-rose-700 mb-1">
+                              <span>禁断 / ドルマゲドン / ゼーロン</span>
+                              <span>{deckCardsByZone.special.length}枚</span>
+                            </div>
+                            <div className="grid grid-cols-8 gap-1">
+                              {deckCardsByZone.special.map((card, idx) => (
+                                <div
+                                  key={`sp-${card.id}-${idx}`}
+                                  onClick={() => removeCardFromDeck(card.id)}
+                                  title={`${card.name}（クリックで1枚減らす）`}
+                                  className="group relative aspect-[3/4] rounded overflow-hidden border border-rose-300 bg-white cursor-pointer hover:border-red-400"
+                                >
+                                  {card.image_url ? (
+                                    <img src={card.image_url} alt={card.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="text-[6px] text-slate-400 flex items-center justify-center h-full">No Img</div>
+                                  )}
+                                  <div className="absolute inset-0 bg-red-600/75 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
+                                    <Minus className="h-3 w-3" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (
