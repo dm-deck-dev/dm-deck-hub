@@ -57,31 +57,107 @@ const MAX_GR_LIMIT = 12;
 
 type DeckZoneCategory = 'main' | 'hyperspatial' | 'gr' | 'special';
 
+const BATTLE_ZONE_CARD_TYPES = new Set([
+  'クリーチャー',
+  'クロスギア',
+  '進化クリーチャー',
+  'NEOクリーチャー',
+  'G-NEOクリーチャー',
+  'S-MAX進化クリーチャー',
+  'ギガ・オレガ・オーラ',
+  'WDフィールド',
+  'オレガ・オーラ',
+  'ヒストリック・フィールド',
+  'ドリーム・クリーチャー',
+  '進化ドリーム・クリーチャー',
+  'G-NEOドリーム・クリーチャー',
+  'NEOドリーム・クリーチャー',
+  'スター進化クリーチャー',
+  'タマシード',
+  'DGフィールド',
+  'D2フィールド',
+  'ドラゴニック・フィールド',
+  'エグザイル・クリーチャー',
+  '禁断フィールド',
+  '禁断の鼓動',
+  'キング・セル',
+  'タマシード/クリーチャー',
+  '無月フィールド',
+  'デュエリスト',
+  'ルナティック・フィールド',
+  'Mono Artifact',
+  '土地',
+  'フェアリー・フィールド',
+  'DMフィールド',
+  'T2フィールド',
+  '幸せのフィールド',
+  '進化エグザイル・クリーチャー',
+  '進化クリーチャー(究極進化)',
+  '進化クリーチャー(進化GV)',
+  '進化クリーチャー(墓地進化GV)',
+  '進化クリーチャー(進化V)',
+  '進化クリーチャー(墓地進化)',
+  '進化クリーチャー(超無限進化)',
+  '進化クリーチャー(超無限進化・Ω)',
+  '進化クリーチャー(マナ進化)',
+  '進化クリーチャー(墓地進化V)',
+  '進化クロスギア',
+  '進化クリーチャー(デッキ進化)',
+  '進化クリーチャー(手札進化)',
+  '進化クリーチャー(手札進化V)',
+  '進化クリーチャー(マナ進化V)',
+  '進化クリーチャー(超無限墓地進化)',
+].map((t) => t.normalize('NFKC')));
+
+const HYPERSPATIAL_CARD_TYPES = new Set([
+  'サイキック・クリーチャー',
+  'ドラグハート・ウエポン',
+  'サイキック・クロスギア',
+  'ルール・プラス',
+  'デュエルメイト・クリーチャー',
+  'デュエルメイト呪文',
+  'ドラグハート・フォートレス',
+  'ドラグハート・タマシード',
+  '禁断クリーチャー',
+  '進化サイキック・クリーチャー',
+  '零龍の儀',
+  '零龍星雲',
+  '最終禁断フィールド',
+  '進化サイキック・クリーチャー(超無限進化)',
+].map((t) => t.normalize('NFKC')));
+
+const GR_CARD_TYPES = new Set([
+  'GRクリーチャー',
+  'NEO GRクリーチャー',
+].map((t) => t.normalize('NFKC')));
+
+const CASTLE_CARD_TYPES = new Set([
+  '城',
+  'G城',
+].map((t) => t.normalize('NFKC')));
+
 const getCardDeckZone = (card: Card): DeckZoneCategory => {
-  const ct = (card.card_type || '').normalize('NFKC');
+  const ct = (card.card_type || '').normalize('NFKC').trim();
   const nm = (card.name || '').normalize('NFKC');
   const races = Array.isArray(card.race) ? card.race.join(' ').normalize('NFKC') : '';
 
-  // GRゾーン（ガチャレンジ）
-  if (ct.includes('GR') || ct.includes('ガチャレンジ') || races.includes('GR')) {
+  // GRゾーン（GRクリーチャー / NEO GRクリーチャー）
+  if (
+    GR_CARD_TYPES.has(ct) ||
+    ct.includes('GRクリーチャー') ||
+    ct.includes('ガチャレンジ') ||
+    races.includes('GR')
+  ) {
     return 'gr';
   }
 
-  // 超次元ゾーン（サイキック / ドラグハート）
+  // 禁断 / ドルマゲドン / ゼーロン専用ゾーン（ゲーム開始時配置セット）
   if (
-    ct.includes('サイキック') ||
-    ct.includes('ドラグハート') ||
-    ct.includes('超次元') ||
-    races.includes('サイキック') ||
-    races.includes('ドラグハート')
-  ) {
-    return 'hyperspatial';
-  }
-
-  // 禁断 / ドルマゲドン / ゼーロン専用ゾーン
-  if (
-    ct.includes('禁断') ||
-    ct.includes('零龍') ||
+    ct === '禁断フィールド' ||
+    ct === '禁断の鼓動' ||
+    ct === '最終禁断フィールド' ||
+    ct === '零龍の儀' ||
+    ct === '零龍星雲' ||
     ct.includes('ドルマゲドン') ||
     nm.includes('禁断 ～封印されしX～') ||
     nm.includes('伝説の禁断 ドキンダムX') ||
@@ -93,7 +169,67 @@ const getCardDeckZone = (card: Card): DeckZoneCategory => {
     return 'special';
   }
 
+  // 超次元ゾーン（サイキック / ドラグハート / デュエルメイト / ルール・プラス / 禁断クリーチャー等）
+  if (
+    HYPERSPATIAL_CARD_TYPES.has(ct) ||
+    ct.includes('サイキック') ||
+    ct.includes('ドラグハート') ||
+    ct.includes('デュエルメイト') ||
+    ct.includes('ルール・プラス') ||
+    ct.includes('禁断クリーチャー') ||
+    ct.includes('超次元') ||
+    races.includes('サイキック') ||
+    races.includes('ドラグハート')
+  ) {
+    return 'hyperspatial';
+  }
+
   return 'main';
+};
+
+type CardPlayCapability = {
+  canBattle: boolean;
+  canSpell: boolean;
+  canCastle: boolean;
+  battleLabel: string;
+};
+
+const getCardPlayCapability = (card: Card): CardPlayCapability => {
+  const ct = (card.card_type || '').normalize('NFKC').trim();
+  const isCastle = CASTLE_CARD_TYPES.has(ct) || ct === '城' || ct === 'G城';
+  const isPureSpell = ct === '呪文';
+  const isTwinpact = ct.includes('/') && ct.includes('呪文') && ct !== 'タマシード/クリーチャー';
+  const isBattleCard =
+    BATTLE_ZONE_CARD_TYPES.has(ct) ||
+    ct.includes('クリーチャー') ||
+    ct.includes('タマシード') ||
+    ct.includes('クロスギア') ||
+    ct.includes('オーラ') ||
+    ct.includes('フィールド') ||
+    ct.includes('デュエリスト') ||
+    ct.includes('キング・セル') ||
+    ct.includes('Artifact') ||
+    ct.includes('土地');
+
+  if (isCastle) {
+    return { canBattle: false, canSpell: false, canCastle: true, battleLabel: '要塞化' };
+  }
+  if (isTwinpact) {
+    return { canBattle: true, canSpell: true, canCastle: false, battleLabel: '召喚' };
+  }
+  if (isPureSpell) {
+    return { canBattle: false, canSpell: true, canCastle: false, battleLabel: '詠唱' };
+  }
+  if (isBattleCard || !ct.includes('呪文')) {
+    const label =
+      ct.includes('クリーチャー') || ct.includes('デュエリスト')
+        ? '召喚'
+        : ct.includes('フィールド') || ct.includes('土地')
+        ? '展開'
+        : '場に出す';
+    return { canBattle: true, canSpell: false, canCastle: false, battleLabel: label };
+  }
+  return { canBattle: false, canSpell: true, canCastle: false, battleLabel: '詠唱' };
 };
 const CARDS_PER_PAGE = 50;
 const CARDS_CACHE_KEY = 'dm_deck_hub_cards_cache_v7';
@@ -1917,6 +2053,13 @@ export default function DMApp() {
     }
   };
 
+  // ---------------- 城／G城の要塞化（新しいシールドとして置く） ----------------
+  const fortifyCastle = (castleInstance: SimCardInstance) => {
+    setSimHand((prev) => prev.filter((c) => c.instanceId !== castleInstance.instanceId));
+    setSimShields((prev) => [...prev, { ...castleInstance, isTapped: false }]);
+    setSimGameMessage(`🏰 「${castleInstance.card.name}」をシールドゾーンに新しいシールドとして置きました！`);
+  };
+
   // ---------------- 呪文詠唱の解決ロジック ----------------
   const castSpell = (spellInstance: SimCardInstance) => {
     setSimHand((prev) => prev.filter((c) => c.instanceId !== spellInstance.instanceId));
@@ -3585,39 +3728,56 @@ export default function DMApp() {
 
                     <div className="p-1.5 flex flex-col gap-1 bg-slate-900 border-t border-slate-800">
                       <span className="text-[9px] font-bold truncate block">{c.card.name}</span>
-                      <div className="grid grid-cols-2 gap-1">
-                        {c.card.card_type === 'クリーチャー' ? (
-                          <button
-                            type="button"
-                            disabled={currentPhase !== 'main'}
-                            onClick={() => {
-                              setSimHand((h) => h.filter((card) => card.instanceId !== c.instanceId));
-                              setSimBattleZone((bz) => [...bz, { ...c, isTapped: false, summonedTurn: simTurn }]);
-                              setSimGameMessage(`「${c.card.name}」を召喚しました！`);
-                            }}
-                            className="py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white text-[9px] font-bold rounded cursor-pointer"
-                          >
-                            召喚
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={currentPhase !== 'main'}
-                            onClick={() => castSpell(c)}
-                            className="py-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-30 text-white text-[9px] font-bold rounded cursor-pointer"
-                          >
-                            詠唱
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          disabled={currentPhase !== 'mana' || hasChargedManaThisTurn}
-                          onClick={() => chargePlayerMana(c.instanceId)}
-                          className="py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-30 text-white text-[9px] font-bold rounded cursor-pointer"
-                        >
-                          マナ
-                        </button>
-                      </div>
+                      {(() => {
+                        const cap = getCardPlayCapability(c.card);
+                        const isTwin = cap.canBattle && cap.canSpell;
+                        return (
+                          <div className={`grid ${isTwin ? 'grid-cols-3' : 'grid-cols-2'} gap-1`}>
+                            {cap.canBattle && (
+                              <button
+                                type="button"
+                                disabled={currentPhase !== 'main'}
+                                onClick={() => {
+                                  setSimHand((h) => h.filter((card) => card.instanceId !== c.instanceId));
+                                  setSimBattleZone((bz) => [...bz, { ...c, isTapped: false, summonedTurn: simTurn }]);
+                                  setSimGameMessage(`「${c.card.name}」をバトルゾーンに出しました（${cap.battleLabel}）！`);
+                                }}
+                                className="py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white text-[9px] font-bold rounded cursor-pointer"
+                              >
+                                {cap.battleLabel}
+                              </button>
+                            )}
+                            {cap.canCastle && (
+                              <button
+                                type="button"
+                                disabled={currentPhase !== 'main'}
+                                onClick={() => fortifyCastle(c)}
+                                className="py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-30 text-white text-[9px] font-bold rounded cursor-pointer"
+                              >
+                                要塞化
+                              </button>
+                            )}
+                            {cap.canSpell && (
+                              <button
+                                type="button"
+                                disabled={currentPhase !== 'main'}
+                                onClick={() => castSpell(c)}
+                                className="py-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-30 text-white text-[9px] font-bold rounded cursor-pointer"
+                              >
+                                詠唱
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={currentPhase !== 'mana' || hasChargedManaThisTurn}
+                              onClick={() => chargePlayerMana(c.instanceId)}
+                              className="py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-30 text-white text-[9px] font-bold rounded cursor-pointer"
+                            >
+                              マナ
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
