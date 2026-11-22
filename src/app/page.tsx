@@ -379,12 +379,7 @@ export default function DMApp() {
   }, [searchName, normalizeSearchText]);
   const [searchRace, setSearchRace] = useState<string>('');
   const [selectedCardType, setSelectedCardType] = useState<string>('all');
-  const [selectedDeckZoneFilter, setSelectedDeckZoneFilter] = useState<'all' | DeckZoneCategory>('all');
-  const [enabledSpecialZones, setEnabledSpecialZones] = useState<{
-    hyperspatial: boolean;
-    gr: boolean;
-    special: boolean;
-  }>({ hyperspatial: false, gr: false, special: false });
+  const [selectedDeckZoneFilter, setSelectedDeckZoneFilter] = useState<DeckZoneCategory>('main');
   const [selectedSet, setSelectedSet] = useState<string>('all');
   const [selectedCivilization, setSelectedCivilization] = useState<string>('all');
   const [selectedCost, setSelectedCost] = useState<string>('all');
@@ -1114,19 +1109,17 @@ export default function DMApp() {
       searchName.trim() !== '' ||
       searchRace.trim() !== '' ||
       selectedCardType !== 'all' ||
-      selectedDeckZoneFilter !== 'all' ||
       selectedSet !== 'all' ||
       selectedCivilization !== 'all' ||
       selectedCost !== 'all' ||
       onlyOwned === true
     );
-  }, [searchName, searchRace, selectedCardType, selectedDeckZoneFilter, selectedSet, selectedCivilization, selectedCost, onlyOwned]);
+  }, [activeTab, searchName, searchRace, selectedCardType, selectedDeckZoneFilter, selectedSet, selectedCivilization, selectedCost, onlyOwned]);
 
   const resetFilters = () => {
     setSearchName('');
     setSearchRace('');
     setSelectedCardType('all');
-    setSelectedDeckZoneFilter('all');
     setSelectedSet('all');
     setSelectedCivilization('all');
     setSelectedCost('all');
@@ -1136,7 +1129,7 @@ export default function DMApp() {
 
   const filteredCards = useMemo(() => {
     return cards.filter((card) => {
-      if (selectedDeckZoneFilter !== 'all' && getCardDeckZone(card) !== selectedDeckZoneFilter) return false;
+      if (activeTab === 'deck' && getCardDeckZone(card) !== selectedDeckZoneFilter) return false;
       if (searchName.trim()) {
         const q = normalizeSearchText(searchName.trim());
         const targetName = normalizeSearchText(card.name || '');
@@ -1348,9 +1341,6 @@ export default function DMApp() {
     }
 
     setDeckCards((prev) => ({ ...prev, [card.id]: (prev[card.id] || 0) + 1 }));
-    if (zone === 'hyperspatial') setEnabledSpecialZones((prev) => ({ ...prev, hyperspatial: true }));
-    if (zone === 'gr') setEnabledSpecialZones((prev) => ({ ...prev, gr: true }));
-    if (zone === 'special') setEnabledSpecialZones((prev) => ({ ...prev, special: true }));
     setDeckMessage(null);
   };
 
@@ -5003,36 +4993,23 @@ export default function DMApp() {
 
                   <div className="pt-1 border-t border-slate-100 space-y-1.5">
                     <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold">
-                      <span>ゾーン選択（クリックで枠表示＆カード絞り込み）</span>
-                      {selectedDeckZoneFilter !== 'all' && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedDeckZoneFilter('all');
-                            setCurrentPage(1);
-                          }}
-                          className="text-blue-600 hover:underline font-extrabold cursor-pointer"
-                        >
-                          全カード表示に戻す
-                        </button>
-                      )}
+                      <span>ゾーン選択（1つ選択・選択ゾーンのカードのみ表示）</span>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                       <button
                         type="button"
                         onClick={() => {
-                          const next = selectedDeckZoneFilter === 'main' ? 'all' : 'main';
-                          setSelectedDeckZoneFilter(next);
+                          setSelectedDeckZoneFilter('main');
                           setCurrentPage(1);
                         }}
                         className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
                           selectedDeckZoneFilter === 'main'
-                            ? 'bg-blue-50 border-blue-400 text-blue-800 ring-1 ring-blue-300 shadow-2xs'
-                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-blue-300'
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-blue-300'
                         }`}
                       >
                         <div className="text-[10px] font-black leading-tight">🃏 メイン</div>
-                        <div className="text-[9px] font-bold mt-0.5">
+                        <div className={`text-[9px] font-bold mt-0.5 ${selectedDeckZoneFilter === 'main' ? 'text-blue-100' : 'text-slate-500'}`}>
                           {mainDeckCount} / {MAX_DECK_LIMIT}枚
                         </div>
                       </button>
@@ -5040,28 +5017,17 @@ export default function DMApp() {
                       <button
                         type="button"
                         onClick={() => {
-                          const isFiltered = selectedDeckZoneFilter === 'hyperspatial';
-                          if (isFiltered) {
-                            setSelectedDeckZoneFilter('all');
-                            if (hyperspatialCount === 0) {
-                              setEnabledSpecialZones((prev) => ({ ...prev, hyperspatial: false }));
-                            }
-                          } else {
-                            setEnabledSpecialZones((prev) => ({ ...prev, hyperspatial: true }));
-                            setSelectedDeckZoneFilter('hyperspatial');
-                          }
+                          setSelectedDeckZoneFilter('hyperspatial');
                           setCurrentPage(1);
                         }}
                         className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
                           selectedDeckZoneFilter === 'hyperspatial'
-                            ? 'bg-indigo-100 border-indigo-400 text-indigo-900 ring-1 ring-indigo-300 shadow-2xs'
-                            : enabledSpecialZones.hyperspatial || hyperspatialCount > 0
-                            ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-2xs'
-                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-indigo-200'
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-indigo-300'
                         }`}
                       >
                         <div className="text-[10px] font-black leading-tight">🌌 超次元</div>
-                        <div className="text-[9px] font-bold mt-0.5">
+                        <div className={`text-[9px] font-bold mt-0.5 ${selectedDeckZoneFilter === 'hyperspatial' ? 'text-indigo-100' : 'text-slate-500'}`}>
                           {hyperspatialCount} / {MAX_HYPERSPATIAL_LIMIT}枚
                         </div>
                       </button>
@@ -5069,28 +5035,17 @@ export default function DMApp() {
                       <button
                         type="button"
                         onClick={() => {
-                          const isFiltered = selectedDeckZoneFilter === 'gr';
-                          if (isFiltered) {
-                            setSelectedDeckZoneFilter('all');
-                            if (grCount === 0) {
-                              setEnabledSpecialZones((prev) => ({ ...prev, gr: false }));
-                            }
-                          } else {
-                            setEnabledSpecialZones((prev) => ({ ...prev, gr: true }));
-                            setSelectedDeckZoneFilter('gr');
-                          }
+                          setSelectedDeckZoneFilter('gr');
                           setCurrentPage(1);
                         }}
                         className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
                           selectedDeckZoneFilter === 'gr'
-                            ? 'bg-amber-100 border-amber-400 text-amber-900 ring-1 ring-amber-300 shadow-2xs'
-                            : enabledSpecialZones.gr || grCount > 0
-                            ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-2xs'
-                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-amber-200'
+                            ? 'bg-amber-600 border-amber-600 text-white shadow-sm'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-amber-300'
                         }`}
                       >
                         <div className="text-[10px] font-black leading-tight">🎲 GRゾーン</div>
-                        <div className="text-[9px] font-bold mt-0.5">
+                        <div className={`text-[9px] font-bold mt-0.5 ${selectedDeckZoneFilter === 'gr' ? 'text-amber-100' : 'text-slate-500'}`}>
                           {grCount} / {MAX_GR_LIMIT}枚(同名2)
                         </div>
                       </button>
@@ -5098,28 +5053,17 @@ export default function DMApp() {
                       <button
                         type="button"
                         onClick={() => {
-                          const isFiltered = selectedDeckZoneFilter === 'special';
-                          if (isFiltered) {
-                            setSelectedDeckZoneFilter('all');
-                            if (specialZoneCount === 0) {
-                              setEnabledSpecialZones((prev) => ({ ...prev, special: false }));
-                            }
-                          } else {
-                            setEnabledSpecialZones((prev) => ({ ...prev, special: true }));
-                            setSelectedDeckZoneFilter('special');
-                          }
+                          setSelectedDeckZoneFilter('special');
                           setCurrentPage(1);
                         }}
                         className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
                           selectedDeckZoneFilter === 'special'
-                            ? 'bg-rose-100 border-rose-400 text-rose-900 ring-1 ring-rose-300 shadow-2xs'
-                            : enabledSpecialZones.special || specialZoneCount > 0
-                            ? 'bg-rose-50 border-rose-300 text-rose-800 shadow-2xs'
-                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-rose-200'
+                            ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-rose-300'
                         }`}
                       >
                         <div className="text-[10px] font-black leading-tight">🔥 禁断/零龍</div>
-                        <div className="text-[9px] font-bold mt-0.5">
+                        <div className={`text-[9px] font-bold mt-0.5 ${selectedDeckZoneFilter === 'special' ? 'text-rose-100' : 'text-slate-500'}`}>
                           {specialZoneCount > 0 ? `${specialZoneCount}枚(セット済)` : '最大1セット'}
                         </div>
                       </button>
@@ -5235,12 +5179,9 @@ export default function DMApp() {
                 </div>
 
                 <div>
-                  {totalDeckCardCount === 0 && !enabledSpecialZones.hyperspatial && !enabledSpecialZones.gr && !enabledSpecialZones.special ? (
-                    <div className="text-center py-10 text-xs text-slate-400 font-medium border-2 border-dashed border-slate-100 rounded-2xl">
-                      左のカード一覧から「デッキに追加」を押すか、上の専用ゾーンを選択してください
-                    </div>
-                  ) : deckViewMode === 'tiles' ? (
+                  {deckViewMode === 'tiles' ? (
                     <div className="space-y-2 max-h-[420px] overflow-y-auto pr-0.5">
+                      {selectedDeckZoneFilter === 'main' && (
                       <div>
                         <div className="text-[10px] font-bold text-slate-500 mb-1 flex items-center justify-between">
                           <span>メインデッキ（40〜60枚・同名4枚まで / クリックで削除）</span>
@@ -5277,9 +5218,10 @@ export default function DMApp() {
                             ))}
                         </div>
                       </div>
+                      )}
 
                       {/* 超次元ゾーン（最大8枚） */}
-                      {(enabledSpecialZones.hyperspatial || deckCardsByZone.hyperspatial.length > 0) && (
+                      {selectedDeckZoneFilter === 'hyperspatial' && (
                         <div className="p-1.5 rounded-xl bg-indigo-50/70 border border-indigo-200/80">
                           <div className="flex items-center justify-between text-[10px] font-extrabold text-indigo-700 mb-1">
                             <span>🌌 超次元ゾーン（サイキック／ドラグハート）</span>
@@ -5326,7 +5268,7 @@ export default function DMApp() {
                       )}
 
                       {/* GRゾーン（最大12枚・同名2枚まで） */}
-                      {(enabledSpecialZones.gr || deckCardsByZone.gr.length > 0) && (
+                      {selectedDeckZoneFilter === 'gr' && (
                         <div className="p-1.5 rounded-xl bg-amber-50/70 border border-amber-200/80">
                           <div className="flex items-center justify-between text-[10px] font-extrabold text-amber-800 mb-1">
                             <span>🎲 GRゾーン（同名2枚まで）</span>
@@ -5373,7 +5315,7 @@ export default function DMApp() {
                       )}
 
                       {/* 禁断 / ドルマゲドン / ゼーロン専用ゾーン（最大1セット） */}
-                      {(enabledSpecialZones.special || deckCardsByZone.special.length > 0) && (
+                      {selectedDeckZoneFilter === 'special' && (
                         <div className="p-1.5 rounded-xl bg-rose-50/70 border border-rose-200/80">
                           <div className="flex items-center justify-between text-[10px] font-extrabold text-rose-700 mb-1">
                             <span>🔥 禁断 / ドルマゲドン / ゼーロン（最大1セット）</span>
@@ -5428,11 +5370,18 @@ export default function DMApp() {
                           { key: 'special', label: `🔥 禁断 / ドルマゲドン / ゼーロン (${specialZoneCount}枚)`, badge: 'text-rose-700' },
                         ] as const
                       ).map((sec) => {
+                        if (sec.key !== selectedDeckZoneFilter) return null;
                         const entries = Object.entries(deckCards).filter(([cardId]) => {
                           const found = cards.find((c) => c.id === cardId);
                           return found && getCardDeckZone(found) === sec.key;
                         });
-                        if (entries.length === 0) return null;
+                        if (entries.length === 0) {
+                          return (
+                            <div key={sec.key} className="text-center py-8 text-xs text-slate-400 font-medium border-2 border-dashed border-slate-100 rounded-2xl">
+                              {sec.label} にまだカードがありません。左の一覧から追加してください。
+                            </div>
+                          );
+                        }
                         return (
                           <div key={sec.key} className="space-y-1">
                             <div className={`text-[10px] font-extrabold px-1 ${sec.badge}`}>{sec.label}</div>
