@@ -379,6 +379,12 @@ export default function DMApp() {
   }, [searchName, normalizeSearchText]);
   const [searchRace, setSearchRace] = useState<string>('');
   const [selectedCardType, setSelectedCardType] = useState<string>('all');
+  const [selectedDeckZoneFilter, setSelectedDeckZoneFilter] = useState<'all' | DeckZoneCategory>('all');
+  const [enabledSpecialZones, setEnabledSpecialZones] = useState<{
+    hyperspatial: boolean;
+    gr: boolean;
+    special: boolean;
+  }>({ hyperspatial: false, gr: false, special: false });
   const [selectedSet, setSelectedSet] = useState<string>('all');
   const [selectedCivilization, setSelectedCivilization] = useState<string>('all');
   const [selectedCost, setSelectedCost] = useState<string>('all');
@@ -1108,17 +1114,19 @@ export default function DMApp() {
       searchName.trim() !== '' ||
       searchRace.trim() !== '' ||
       selectedCardType !== 'all' ||
+      selectedDeckZoneFilter !== 'all' ||
       selectedSet !== 'all' ||
       selectedCivilization !== 'all' ||
       selectedCost !== 'all' ||
       onlyOwned === true
     );
-  }, [searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned]);
+  }, [searchName, searchRace, selectedCardType, selectedDeckZoneFilter, selectedSet, selectedCivilization, selectedCost, onlyOwned]);
 
   const resetFilters = () => {
     setSearchName('');
     setSearchRace('');
     setSelectedCardType('all');
+    setSelectedDeckZoneFilter('all');
     setSelectedSet('all');
     setSelectedCivilization('all');
     setSelectedCost('all');
@@ -1128,6 +1136,7 @@ export default function DMApp() {
 
   const filteredCards = useMemo(() => {
     return cards.filter((card) => {
+      if (selectedDeckZoneFilter !== 'all' && getCardDeckZone(card) !== selectedDeckZoneFilter) return false;
       if (searchName.trim()) {
         const q = normalizeSearchText(searchName.trim());
         const targetName = normalizeSearchText(card.name || '');
@@ -1339,6 +1348,9 @@ export default function DMApp() {
     }
 
     setDeckCards((prev) => ({ ...prev, [card.id]: (prev[card.id] || 0) + 1 }));
+    if (zone === 'hyperspatial') setEnabledSpecialZones((prev) => ({ ...prev, hyperspatial: true }));
+    if (zone === 'gr') setEnabledSpecialZones((prev) => ({ ...prev, gr: true }));
+    if (zone === 'special') setEnabledSpecialZones((prev) => ({ ...prev, special: true }));
     setDeckMessage(null);
   };
 
@@ -4989,25 +5001,84 @@ export default function DMApp() {
                     />
                   </div>
 
-                  {(hyperspatialCount > 0 || grCount > 0 || specialZoneCount > 0) && (
-                    <div className="flex flex-wrap gap-1.5 pt-0.5">
-                      {hyperspatialCount > 0 && (
-                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-extrabold">
-                          超次元: {hyperspatialCount}/{MAX_HYPERSPATIAL_LIMIT}枚
-                        </span>
-                      )}
-                      {grCount > 0 && (
-                        <span className="px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-extrabold">
-                          GR: {grCount}/{MAX_GR_LIMIT}枚
-                        </span>
-                      )}
-                      {specialZoneCount > 0 && (
-                        <span className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-extrabold">
-                          禁断/零龍/ドルマゲドン: {specialZoneCount}枚
-                        </span>
+                  <div className="pt-1 border-t border-slate-100 space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold">
+                      <span>専用ゾーン設定（クリックで枠表示＆カード絞り込み）</span>
+                      {selectedDeckZoneFilter !== 'all' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedDeckZoneFilter('all');
+                            setCurrentPage(1);
+                          }}
+                          className="text-blue-600 hover:underline font-extrabold cursor-pointer"
+                        >
+                          全カード表示に戻す
+                        </button>
                       )}
                     </div>
-                  )}
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !(enabledSpecialZones.hyperspatial || hyperspatialCount > 0);
+                          setEnabledSpecialZones((prev) => ({ ...prev, hyperspatial: next }));
+                          setSelectedDeckZoneFilter(next ? 'hyperspatial' : 'all');
+                          setCurrentPage(1);
+                        }}
+                        className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
+                          enabledSpecialZones.hyperspatial || hyperspatialCount > 0
+                            ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-2xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-indigo-200'
+                        }`}
+                      >
+                        <div className="text-[10px] font-black leading-tight">🌌 超次元</div>
+                        <div className="text-[9px] font-bold mt-0.5">
+                          {hyperspatialCount} / {MAX_HYPERSPATIAL_LIMIT}枚
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !(enabledSpecialZones.gr || grCount > 0);
+                          setEnabledSpecialZones((prev) => ({ ...prev, gr: next }));
+                          setSelectedDeckZoneFilter(next ? 'gr' : 'all');
+                          setCurrentPage(1);
+                        }}
+                        className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
+                          enabledSpecialZones.gr || grCount > 0
+                            ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-2xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-amber-200'
+                        }`}
+                      >
+                        <div className="text-[10px] font-black leading-tight">🎲 GRゾーン</div>
+                        <div className="text-[9px] font-bold mt-0.5">
+                          {grCount} / {MAX_GR_LIMIT}枚(同名2)
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !(enabledSpecialZones.special || specialZoneCount > 0);
+                          setEnabledSpecialZones((prev) => ({ ...prev, special: next }));
+                          setSelectedDeckZoneFilter(next ? 'special' : 'all');
+                          setCurrentPage(1);
+                        }}
+                        className={`p-1.5 rounded-xl border text-left transition cursor-pointer ${
+                          enabledSpecialZones.special || specialZoneCount > 0
+                            ? 'bg-rose-50 border-rose-300 text-rose-800 shadow-2xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-rose-200'
+                        }`}
+                      >
+                        <div className="text-[10px] font-black leading-tight">🔥 禁断/零龍</div>
+                        <div className="text-[9px] font-bold mt-0.5">
+                          {specialZoneCount > 0 ? `${specialZoneCount}枚(セット済)` : '最大1セット'}
+                        </div>
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-100 space-y-1.5">
@@ -5118,18 +5189,18 @@ export default function DMApp() {
                 </div>
 
                 <div>
-                  {flattenedDeckCards.length === 0 ? (
+                  {totalDeckCardCount === 0 && !enabledSpecialZones.hyperspatial && !enabledSpecialZones.gr && !enabledSpecialZones.special ? (
                     <div className="text-center py-10 text-xs text-slate-400 font-medium border-2 border-dashed border-slate-100 rounded-2xl">
-                      左のカード一覧から「デッキに追加」を押してください
+                      左のカード一覧から「デッキに追加」を押すか、上の専用ゾーンを選択してください
                     </div>
                   ) : deckViewMode === 'tiles' ? (
-                    <div>
-                      <div className="text-[10px] font-bold text-slate-500 mb-1 flex items-center justify-between">
-                        <span>デッキ一覧（クリックで1枚削除）</span>
-                        <span>{flattenedDeckCards.length}枚</span>
-                      </div>
+                    <div className="space-y-2 max-h-[420px] overflow-y-auto pr-0.5">
+                      <div>
+                        <div className="text-[10px] font-bold text-slate-500 mb-1 flex items-center justify-between">
+                          <span>メインデッキ（40〜60枚・同名4枚まで / クリックで削除）</span>
+                          <span>{flattenedDeckCards.length} / {MAX_DECK_LIMIT}枚</span>
+                        </div>
 
-                      <div className="max-h-[380px] overflow-y-auto pr-0.5">
                         <div className="grid grid-cols-8 gap-1 bg-slate-50 p-1.5 rounded-xl border border-slate-100">
                           {flattenedDeckCards.map((card, idx) => (
                             <div
@@ -5159,124 +5230,207 @@ export default function DMApp() {
                               </div>
                             ))}
                         </div>
+                      </div>
 
-                        {/* 外部ゾーン専用枠（超次元 / GR / 禁断・ドルマゲドン・ゼーロン） */}
-                        {deckCardsByZone.hyperspatial.length > 0 && (
-                          <div className="mt-2 p-1.5 rounded-xl bg-indigo-50/70 border border-indigo-200/80">
-                            <div className="flex items-center justify-between text-[10px] font-extrabold text-indigo-700 mb-1">
-                              <span>超次元ゾーン</span>
+                      {/* 超次元ゾーン（最大8枚） */}
+                      {(enabledSpecialZones.hyperspatial || deckCardsByZone.hyperspatial.length > 0) && (
+                        <div className="p-1.5 rounded-xl bg-indigo-50/70 border border-indigo-200/80">
+                          <div className="flex items-center justify-between text-[10px] font-extrabold text-indigo-700 mb-1">
+                            <span>🌌 超次元ゾーン（サイキック／ドラグハート）</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDeckZoneFilter('hyperspatial');
+                                  setCurrentPage(1);
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-bold hover:bg-indigo-700 cursor-pointer"
+                              >
+                                カード検索
+                              </button>
                               <span>{deckCardsByZone.hyperspatial.length} / {MAX_HYPERSPATIAL_LIMIT}枚</span>
                             </div>
-                            <div className="grid grid-cols-8 gap-1">
-                              {deckCardsByZone.hyperspatial.map((card, idx) => (
-                                <div
-                                  key={`hs-${card.id}-${idx}`}
-                                  onClick={() => removeCardFromDeck(card.id)}
-                                  title={`${card.name}（クリックで1枚減らす）`}
-                                  className="group relative aspect-[3/4] rounded overflow-hidden border border-indigo-300 bg-white cursor-pointer hover:border-red-400"
-                                >
-                                  {card.image_url ? (
-                                    <img src={card.image_url} alt={card.name} className="w-full h-full object-cover" />
-                                  ) : (
-                                    <div className="text-[6px] text-slate-400 flex items-center justify-center h-full">No Img</div>
-                                  )}
-                                  <div className="absolute inset-0 bg-red-600/75 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
-                                    <Minus className="h-3 w-3" />
-                                  </div>
+                          </div>
+                          <div className="grid grid-cols-8 gap-1">
+                            {deckCardsByZone.hyperspatial.map((card, idx) => (
+                              <div
+                                key={`hs-${card.id}-${idx}`}
+                                onClick={() => removeCardFromDeck(card.id)}
+                                title={`${card.name}（クリックで1枚減らす）`}
+                                className="group relative aspect-[3/4] rounded overflow-hidden border border-indigo-300 bg-white cursor-pointer hover:border-red-400"
+                              >
+                                {card.image_url ? (
+                                  <img src={card.image_url} alt={card.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="text-[6px] text-slate-400 flex items-center justify-center h-full">No Img</div>
+                                )}
+                                <div className="absolute inset-0 bg-red-600/75 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
+                                  <Minus className="h-3 w-3" />
+                                </div>
+                              </div>
+                            ))}
+                            {deckCardsByZone.hyperspatial.length < MAX_HYPERSPATIAL_LIMIT &&
+                              Array.from({ length: MAX_HYPERSPATIAL_LIMIT - deckCardsByZone.hyperspatial.length }).map((_, emptyIdx) => (
+                                <div key={`hs-empty-${emptyIdx}`} className="aspect-[3/4] rounded border border-dashed border-indigo-200 bg-white/60 flex items-center justify-center text-indigo-300 text-[8px] select-none">
+                                  +
                                 </div>
                               ))}
-                            </div>
                           </div>
-                        )}
+                        </div>
+                      )}
 
-                        {deckCardsByZone.gr.length > 0 && (
-                          <div className="mt-2 p-1.5 rounded-xl bg-amber-50/70 border border-amber-200/80">
-                            <div className="flex items-center justify-between text-[10px] font-extrabold text-amber-800 mb-1">
-                              <span>GRゾーン</span>
+                      {/* GRゾーン（最大12枚・同名2枚まで） */}
+                      {(enabledSpecialZones.gr || deckCardsByZone.gr.length > 0) && (
+                        <div className="p-1.5 rounded-xl bg-amber-50/70 border border-amber-200/80">
+                          <div className="flex items-center justify-between text-[10px] font-extrabold text-amber-800 mb-1">
+                            <span>🎲 GRゾーン（同名2枚まで）</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDeckZoneFilter('gr');
+                                  setCurrentPage(1);
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-amber-600 text-white text-[9px] font-bold hover:bg-amber-700 cursor-pointer"
+                              >
+                                カード検索
+                              </button>
                               <span>{deckCardsByZone.gr.length} / {MAX_GR_LIMIT}枚</span>
                             </div>
-                            <div className="grid grid-cols-8 gap-1">
-                              {deckCardsByZone.gr.map((card, idx) => (
-                                <div
-                                  key={`gr-${card.id}-${idx}`}
-                                  onClick={() => removeCardFromDeck(card.id)}
-                                  title={`${card.name}（クリックで1枚減らす）`}
-                                  className="group relative aspect-[3/4] rounded overflow-hidden border border-amber-300 bg-white cursor-pointer hover:border-red-400"
-                                >
-                                  {card.image_url ? (
-                                    <img src={card.image_url} alt={card.name} className="w-full h-full object-cover" />
-                                  ) : (
-                                    <div className="text-[6px] text-slate-400 flex items-center justify-center h-full">No Img</div>
-                                  )}
-                                  <div className="absolute inset-0 bg-red-600/75 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
-                                    <Minus className="h-3 w-3" />
-                                  </div>
+                          </div>
+                          <div className="grid grid-cols-6 gap-1">
+                            {deckCardsByZone.gr.map((card, idx) => (
+                              <div
+                                key={`gr-${card.id}-${idx}`}
+                                onClick={() => removeCardFromDeck(card.id)}
+                                title={`${card.name}（クリックで1枚減らす）`}
+                                className="group relative aspect-[3/4] rounded overflow-hidden border border-amber-300 bg-white cursor-pointer hover:border-red-400"
+                              >
+                                {card.image_url ? (
+                                  <img src={card.image_url} alt={card.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="text-[6px] text-slate-400 flex items-center justify-center h-full">No Img</div>
+                                )}
+                                <div className="absolute inset-0 bg-red-600/75 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
+                                  <Minus className="h-3 w-3" />
+                                </div>
+                              </div>
+                            ))}
+                            {deckCardsByZone.gr.length < MAX_GR_LIMIT &&
+                              Array.from({ length: MAX_GR_LIMIT - deckCardsByZone.gr.length }).map((_, emptyIdx) => (
+                                <div key={`gr-empty-${emptyIdx}`} className="aspect-[3/4] rounded border border-dashed border-amber-200 bg-white/60 flex items-center justify-center text-amber-300 text-[8px] select-none">
+                                  +
                                 </div>
                               ))}
-                            </div>
                           </div>
-                        )}
+                        </div>
+                      )}
 
-                        {deckCardsByZone.special.length > 0 && (
-                          <div className="mt-2 p-1.5 rounded-xl bg-rose-50/70 border border-rose-200/80">
-                            <div className="flex items-center justify-between text-[10px] font-extrabold text-rose-700 mb-1">
-                              <span>禁断 / ドルマゲドン / ゼーロン</span>
-                              <span>{deckCardsByZone.special.length}枚</span>
-                            </div>
-                            <div className="grid grid-cols-8 gap-1">
-                              {deckCardsByZone.special.map((card, idx) => (
-                                <div
-                                  key={`sp-${card.id}-${idx}`}
-                                  onClick={() => removeCardFromDeck(card.id)}
-                                  title={`${card.name}（クリックで1枚減らす）`}
-                                  className="group relative aspect-[3/4] rounded overflow-hidden border border-rose-300 bg-white cursor-pointer hover:border-red-400"
-                                >
-                                  {card.image_url ? (
-                                    <img src={card.image_url} alt={card.name} className="w-full h-full object-cover" />
-                                  ) : (
-                                    <div className="text-[6px] text-slate-400 flex items-center justify-center h-full">No Img</div>
-                                  )}
-                                  <div className="absolute inset-0 bg-red-600/75 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
-                                    <Minus className="h-3 w-3" />
-                                  </div>
-                                </div>
-                              ))}
+                      {/* 禁断 / ドルマゲドン / ゼーロン専用ゾーン（最大1セット） */}
+                      {(enabledSpecialZones.special || deckCardsByZone.special.length > 0) && (
+                        <div className="p-1.5 rounded-xl bg-rose-50/70 border border-rose-200/80">
+                          <div className="flex items-center justify-between text-[10px] font-extrabold text-rose-700 mb-1">
+                            <span>🔥 禁断 / ドルマゲドン / ゼーロン（最大1セット）</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDeckZoneFilter('special');
+                                  setCurrentPage(1);
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-bold hover:bg-rose-700 cursor-pointer"
+                              >
+                                カード検索
+                              </button>
+                              <span>{deckCardsByZone.special.length > 0 ? `${deckCardsByZone.special.length}枚` : '0 / 1セット'}</span>
                             </div>
                           </div>
-                        )}
-                      </div>
+                          <div className="grid grid-cols-5 gap-1">
+                            {deckCardsByZone.special.map((card, idx) => (
+                              <div
+                                key={`sp-${card.id}-${idx}`}
+                                onClick={() => removeCardFromDeck(card.id)}
+                                title={`${card.name}（クリックで1枚減らす）`}
+                                className="group relative aspect-[3/4] rounded overflow-hidden border border-rose-300 bg-white cursor-pointer hover:border-red-400"
+                              >
+                                {card.image_url ? (
+                                  <img src={card.image_url} alt={card.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="text-[6px] text-slate-400 flex items-center justify-center h-full">No Img</div>
+                                )}
+                                <div className="absolute inset-0 bg-red-600/75 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
+                                  <Minus className="h-3 w-3" />
+                                </div>
+                              </div>
+                            ))}
+                            {deckCardsByZone.special.length === 0 && (
+                              <div className="col-span-5 py-3 rounded border border-dashed border-rose-200 bg-white/60 text-center text-[10px] font-bold text-rose-400 select-none">
+                                禁断・ドルマゲドンX・零龍（ゼーロン）を1セット設定可能
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <div className="space-y-1 max-h-[360px] overflow-y-auto pr-1">
-                      {Object.entries(deckCards).map(([cardId, count]) => {
-                        const card = cards.find((c) => c.id === cardId);
-                        if (!card) return null;
-                        const owned = counts[card.id] || 0;
-                        const isShort = count > owned;
-
+                    <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                      {(
+                        [
+                          { key: 'main', label: `メインデッキ (${mainDeckCount}/${MAX_DECK_LIMIT}枚)`, badge: 'text-slate-600' },
+                          { key: 'hyperspatial', label: `🌌 超次元ゾーン (${hyperspatialCount}/${MAX_HYPERSPATIAL_LIMIT}枚)`, badge: 'text-indigo-700' },
+                          { key: 'gr', label: `🎲 GRゾーン (${grCount}/${MAX_GR_LIMIT}枚・同名2枚まで)`, badge: 'text-amber-700' },
+                          { key: 'special', label: `🔥 禁断 / ドルマゲドン / ゼーロン (${specialZoneCount}枚)`, badge: 'text-rose-700' },
+                        ] as const
+                      ).map((sec) => {
+                        const entries = Object.entries(deckCards).filter(([cardId]) => {
+                          const found = cards.find((c) => c.id === cardId);
+                          return found && getCardDeckZone(found) === sec.key;
+                        });
+                        if (entries.length === 0) return null;
                         return (
-                          <div key={cardId} className="flex items-center justify-between p-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 transition border border-slate-100 text-xs">
-                            <div className="flex items-center gap-2 overflow-hidden">
-                              <div className="h-8 w-6 rounded overflow-hidden bg-slate-200 shrink-0 border">
-                                {card.image_url ? <img src={card.image_url} alt="" className="w-full h-full object-cover" /> : null}
-                              </div>
-                              <div className="truncate">
-                                <span className="font-bold text-slate-800 block truncate text-[11px]">{card.name}</span>
-                                <span className={`text-[9px] font-semibold ${isShort ? 'text-amber-600' : 'text-slate-400'}`}>
-                                  ★{card.cost ?? '-'} • 所持: {owned}枚 {isShort && `(${count - owned}枚 不足)`}
-                                </span>
-                              </div>
-                            </div>
+                          <div key={sec.key} className="space-y-1">
+                            <div className={`text-[10px] font-extrabold px-1 ${sec.badge}`}>{sec.label}</div>
+                            {entries.map(([cardId, count]) => {
+                              const card = cards.find((c) => c.id === cardId);
+                              if (!card) return null;
+                              const owned = counts[card.id] || 0;
+                              const isShort = count > owned;
+                              const nameCount = deckCardNameCounts[normalizeDeckCardName(card.name)] || 0;
+                              const disablePlus =
+                                sec.key === 'hyperspatial'
+                                  ? nameCount >= 4 || hyperspatialCount >= MAX_HYPERSPATIAL_LIMIT
+                                  : sec.key === 'gr'
+                                  ? nameCount >= 2 || grCount >= MAX_GR_LIMIT
+                                  : sec.key === 'special'
+                                  ? nameCount >= 1
+                                  : nameCount >= 4 || mainDeckCount >= MAX_DECK_LIMIT;
 
-                            <div className="flex items-center gap-1 shrink-0 bg-white border border-slate-200 rounded-lg p-0.5">
-                              <button type="button" onClick={() => removeCardFromDeck(card.id)} className="h-4 w-4 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600">
-                                <Minus className="h-2.5 w-2.5" />
-                              </button>
-                              <span className="w-4 text-center font-bold text-slate-800 text-[11px]">{count}</span>
-                              <button type="button" onClick={() => addCardToDeck(card)} disabled={(deckCardNameCounts[normalizeDeckCardName(card.name)] || 0) >= 4 || totalDeckCardCount >= MAX_DECK_LIMIT} className="h-4 w-4 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 disabled:opacity-30">
-                                <Plus className="h-2.5 w-2.5" />
-                              </button>
-                            </div>
+                              return (
+                                <div key={cardId} className="flex items-center justify-between p-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 transition border border-slate-100 text-xs">
+                                  <div className="flex items-center gap-2 overflow-hidden">
+                                    <div className="h-8 w-6 rounded overflow-hidden bg-slate-200 shrink-0 border">
+                                      {card.image_url ? <img src={card.image_url} alt="" className="w-full h-full object-cover" /> : null}
+                                    </div>
+                                    <div className="truncate">
+                                      <span className="font-bold text-slate-800 block truncate text-[11px]">{card.name}</span>
+                                      <span className={`text-[9px] font-semibold ${isShort ? 'text-amber-600' : 'text-slate-400'}`}>
+                                        ★{card.cost ?? '-'} • 所持: {owned}枚 {isShort && `(${count - owned}枚 不足)`}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0 bg-white border border-slate-200 rounded-lg p-0.5">
+                                    <button type="button" onClick={() => removeCardFromDeck(card.id)} className="h-4 w-4 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600">
+                                      <Minus className="h-2.5 w-2.5" />
+                                    </button>
+                                    <span className="w-4 text-center font-bold text-slate-800 text-[11px]">{count}</span>
+                                    <button type="button" onClick={() => addCardToDeck(card)} disabled={disablePlus} className="h-4 w-4 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 disabled:opacity-30">
+                                      <Plus className="h-2.5 w-2.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })}
@@ -5289,15 +5443,15 @@ export default function DMApp() {
                   onClick={openThumbnailPickerBeforeSave}
                   disabled={deckSaving || totalDeckCardCount === 0}
                   className={`w-full py-2.5 text-white font-bold rounded-2xl text-xs transition shadow-md flex items-center justify-center gap-2 disabled:bg-slate-200 disabled:text-slate-400 cursor-pointer ${
-                    totalDeckCardCount >= BASE_DECK_LIMIT ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
+                    mainDeckCount >= BASE_DECK_LIMIT ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
                   }`}
                 >
                   {deckSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                   {currentDeckId
-                    ? `保存する（${totalDeckCardCount}枚）`
-                    : totalDeckCardCount >= BASE_DECK_LIMIT
-                    ? `デッキを新規保存する（${totalDeckCardCount}枚 構築完了）`
-                    : `下書き保存する（${totalDeckCardCount}/${MAX_DECK_LIMIT}枚）`}
+                    ? `保存する（メイン${mainDeckCount}枚${totalDeckCardCount > mainDeckCount ? `＋外部${totalDeckCardCount - mainDeckCount}枚` : ''}）`
+                    : mainDeckCount >= BASE_DECK_LIMIT
+                    ? `デッキを新規保存する（メイン${mainDeckCount}枚 構築完了）`
+                    : `下書き保存する（メイン${mainDeckCount}/${MAX_DECK_LIMIT}枚）`}
                 </button>
               </div>
             </aside>
