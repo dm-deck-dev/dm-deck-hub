@@ -1299,7 +1299,7 @@ export default function DMApp() {
       if (scoreA !== scoreB) return scoreB - scoreA;
       return (a.ruby || a.name || "").localeCompare(b.ruby || b.name || "", "ja");
     });
-  }, [cards, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, sortBy, normalizeSearchText, rubyMatchedNames, extractSetCode, getSetReleaseScore]);
+  }, [cards, activeTab, selectedDeckZoneFilter, counts, searchName, searchRace, selectedCardType, selectedSet, selectedCivilization, selectedCost, onlyOwned, sortBy, normalizeSearchText, rubyMatchedNames, extractSetCode, getSetReleaseScore]);
 
   // 検索条件・並び順が変わったら1ページ目に戻す（初回マウント時は保存済みページ番号を優先）
   useEffect(() => {
