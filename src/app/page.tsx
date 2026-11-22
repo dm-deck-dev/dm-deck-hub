@@ -251,6 +251,70 @@ export default function DMApp() {
   const [isThumbnailModalOpen, setIsThumbnailModalOpen] = useState<boolean>(false);
   const [savedDecks, setSavedDecks] = useState<{ id: string; name: string; created_at: string; total_cards: number; thumbnail_card_id?: string | null }[]>([]);
   const [loadingDecks, setLoadingDecks] = useState(false);
+  const [selectedDeckZoneFilter, setSelectedDeckZoneFilter] = useState<DeckZoneCategory>('main');
+  const [isEditorSessionRestored, setIsEditorSessionRestored] = useState(false);
+
+  // デッキ編集画面・編集内容の復元（リロード時にデッキ一覧へ戻らないようにする）
+  useEffect(() => {
+    if (!isClientMounted || isEditorSessionRestored) return;
+    try {
+      const raw = sessionStorage.getItem('dm_deck_hub_editor_session_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.deckTabScreen === 'editor' || parsed.deckTabScreen === 'list') {
+          setDeckTabScreen(parsed.deckTabScreen);
+        }
+        if (typeof parsed.currentDeckId === 'string' || parsed.currentDeckId === null) {
+          setCurrentDeckId(parsed.currentDeckId);
+        }
+        if (typeof parsed.deckName === 'string') {
+          setDeckName(parsed.deckName);
+        }
+        if (parsed.deckCards && typeof parsed.deckCards === 'object') {
+          setDeckCards(parsed.deckCards);
+        }
+        if (typeof parsed.thumbnailCardId === 'string' || parsed.thumbnailCardId === null) {
+          setThumbnailCardId(parsed.thumbnailCardId);
+        }
+        if (
+          parsed.selectedDeckZoneFilter === 'main' ||
+          parsed.selectedDeckZoneFilter === 'hyperspatial' ||
+          parsed.selectedDeckZoneFilter === 'gr' ||
+          parsed.selectedDeckZoneFilter === 'special'
+        ) {
+          setSelectedDeckZoneFilter(parsed.selectedDeckZoneFilter);
+        }
+      }
+    } catch {}
+    setIsEditorSessionRestored(true);
+  }, [isClientMounted, isEditorSessionRestored]);
+
+  // デッキ編集画面・編集内容の自動保存
+  useEffect(() => {
+    if (!isClientMounted || !isEditorSessionRestored) return;
+    try {
+      sessionStorage.setItem(
+        'dm_deck_hub_editor_session_v1',
+        JSON.stringify({
+          deckTabScreen,
+          currentDeckId,
+          deckName,
+          deckCards,
+          thumbnailCardId,
+          selectedDeckZoneFilter,
+        })
+      );
+    } catch {}
+  }, [
+    isClientMounted,
+    isEditorSessionRestored,
+    deckTabScreen,
+    currentDeckId,
+    deckName,
+    deckCards,
+    thumbnailCardId,
+    selectedDeckZoneFilter,
+  ]);
 
   const getLocalDeckThumbs = (): Record<string, string> => {
     if (typeof window === 'undefined') return {};
@@ -379,7 +443,6 @@ export default function DMApp() {
   }, [searchName, normalizeSearchText]);
   const [searchRace, setSearchRace] = useState<string>('');
   const [selectedCardType, setSelectedCardType] = useState<string>('all');
-  const [selectedDeckZoneFilter, setSelectedDeckZoneFilter] = useState<DeckZoneCategory>('main');
   const [selectedSet, setSelectedSet] = useState<string>('all');
   const [selectedCivilization, setSelectedCivilization] = useState<string>('all');
   const [selectedCost, setSelectedCost] = useState<string>('all');
