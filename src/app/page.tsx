@@ -1768,6 +1768,7 @@ export default function DMApp() {
           : `下書き保存しました（現在: ${totalDeckCardCount}枚）。`,
         type: 'success',
       });
+      await loadSavedDecks();
     } catch (err: any) {
       setDeckMessage({ text: err.message || 'デッキの保存に失敗しました。', type: 'error' });
     } finally {
