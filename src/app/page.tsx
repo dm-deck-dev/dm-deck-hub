@@ -4814,9 +4814,9 @@ export default function DMApp() {
         </div>
       ) : (
         /* ================ タブ1・2: 資産管理＆デッキ構築エディタ画面 ================ */
-        <div className={`max-w-7xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6 ${activeTab === 'deck' ? 'flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:gap-6' : 'grid grid-cols-1 lg:grid-cols-12 gap-6'}`}>
-          <section ref={cardListTopRef} className={`${activeTab === 'deck' ? 'order-2 lg:order-1 lg:col-span-6' : 'lg:col-span-12'} flex flex-col gap-3 sm:gap-4 scroll-mt-20`}>
-            <div className={`${activeTab === 'deck' ? 'order-2 lg:order-1' : ''} bg-white p-3 sm:p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap gap-2 sm:gap-2.5 items-center`}>
+        <div className={`max-w-7xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6 ${activeTab === 'deck' ? 'flex flex-col lg:grid lg:grid-cols-12 gap-4 lg:gap-6 lg:h-[calc(100vh-4.25rem)] lg:overflow-hidden lg:pb-4' : 'grid grid-cols-1 lg:grid-cols-12 gap-6'}`}>
+          <section ref={cardListTopRef} className={`${activeTab === 'deck' ? 'order-2 lg:order-1 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-hidden' : 'lg:col-span-12'} flex flex-col gap-3 sm:gap-4 scroll-mt-20`}>
+            <div className={`${activeTab === 'deck' ? 'order-2 lg:order-1 shrink-0' : ''} bg-white p-3 sm:p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap gap-2 sm:gap-2.5 items-center`}>
               <div className="relative flex-1 min-w-[130px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <input
@@ -4934,7 +4934,7 @@ export default function DMApp() {
               </button>
             </div>
 
-            <div className={`${activeTab === 'deck' ? 'order-1 lg:order-2' : ''} space-y-3`}>
+            <div className={`${activeTab === 'deck' ? 'order-1 lg:order-2 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1.5 lg:pb-6' : ''} space-y-3`}>
             {loading ? (
               <div className="text-center py-24 text-slate-400 font-medium text-sm flex items-center justify-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
@@ -5108,8 +5108,8 @@ export default function DMApp() {
           </section>
 
           {activeTab === 'deck' && (
-            <aside className="order-1 lg:order-2 lg:col-span-6 static lg:sticky lg:top-16">
-              <div className="bg-white rounded-3xl border border-slate-200/80 shadow-md p-4 flex flex-col lg:max-h-[calc(100vh-5rem)] overflow-hidden">
+            <aside className="order-1 lg:order-2 lg:col-span-6 lg:h-full lg:min-h-0">
+              <div className="bg-white rounded-3xl border border-slate-200/80 shadow-md p-4 flex flex-col lg:h-full overflow-hidden">
                 <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
