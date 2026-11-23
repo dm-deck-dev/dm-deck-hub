@@ -5108,8 +5108,9 @@ export default function DMApp() {
           </section>
 
           {activeTab === 'deck' && (
-            <aside className="order-1 lg:order-2 lg:col-span-6 space-y-4 static lg:sticky lg:top-20 h-fit">
-              <div className="bg-white rounded-3xl border border-slate-200/80 shadow-md p-4 space-y-3">
+            <aside className="order-1 lg:order-2 lg:col-span-6 static lg:sticky lg:top-16">
+              <div className="bg-white rounded-3xl border border-slate-200/80 shadow-md p-4 flex flex-col lg:max-h-[calc(100vh-5rem)] overflow-hidden">
+                <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 w-1/2 sm:w-3/5">
@@ -5656,21 +5657,25 @@ export default function DMApp() {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={openThumbnailPickerBeforeSave}
-                  disabled={deckSaving || totalDeckCardCount === 0}
-                  className={`w-full py-2.5 text-white font-bold rounded-2xl text-xs transition shadow-md flex items-center justify-center gap-2 disabled:bg-slate-200 disabled:text-slate-400 cursor-pointer ${
-                    mainDeckCount >= BASE_DECK_LIMIT ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
-                  }`}
-                >
-                  {deckSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  {currentDeckId
-                    ? `保存する（メイン${mainDeckCount}枚${totalDeckCardCount > mainDeckCount ? `＋外部${totalDeckCardCount - mainDeckCount}枚` : ''}）`
-                    : mainDeckCount >= BASE_DECK_LIMIT
-                    ? `デッキを新規保存する（メイン${mainDeckCount}枚 構築完了）`
-                    : `下書き保存する（メイン${mainDeckCount}/${MAX_DECK_LIMIT}枚）`}
-                </button>
+                </div>
+
+                <div className="shrink-0 pt-2.5 mt-2 border-t border-slate-100 bg-white">
+                  <button
+                    type="button"
+                    onClick={openThumbnailPickerBeforeSave}
+                    disabled={deckSaving || totalDeckCardCount === 0}
+                    className={`w-full py-2.5 text-white font-bold rounded-2xl text-xs transition shadow-md flex items-center justify-center gap-2 disabled:bg-slate-200 disabled:text-slate-400 cursor-pointer ${
+                      mainDeckCount >= BASE_DECK_LIMIT ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    {deckSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    {currentDeckId
+                      ? `保存する（メイン${mainDeckCount}枚${totalDeckCardCount > mainDeckCount ? `＋外部${totalDeckCardCount - mainDeckCount}枚` : ''}）`
+                      : mainDeckCount >= BASE_DECK_LIMIT
+                      ? `デッキを新規保存する（メイン${mainDeckCount}枚 構築完了）`
+                      : `下書き保存する（メイン${mainDeckCount}/${MAX_DECK_LIMIT}枚）`}
+                  </button>
+                </div>
               </div>
             </aside>
           )}
