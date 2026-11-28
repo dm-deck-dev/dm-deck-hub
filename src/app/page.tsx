@@ -594,6 +594,33 @@ export default function DMApp() {
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
+  const isAnyModalOpen = Boolean(
+    activeCard ||
+    isAuthModalOpen ||
+    isTradeModalOpen ||
+    isDeckListOpen ||
+    isThumbnailModalOpen ||
+    isSimulatorOpen
+  );
+
+  // モーダル表示中は背面の背景スクロールをロックする
+  useEffect(() => {
+    if (!isClientMounted) return;
+    if (isAnyModalOpen) {
+      const prevBodyOverflow = document.body.style.overflow;
+      const prevHtmlOverflow = document.documentElement.style.overflow;
+      const prevBodyOverscroll = document.body.style.overscrollBehavior;
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overscrollBehavior = 'none';
+      return () => {
+        document.body.style.overflow = prevBodyOverflow;
+        document.documentElement.style.overflow = prevHtmlOverflow;
+        document.body.style.overscrollBehavior = prevBodyOverscroll;
+      };
+    }
+  }, [isClientMounted, isAnyModalOpen]);
+
   const loadUserCardCounts = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from('user_cards')
@@ -3823,7 +3850,7 @@ export default function DMApp() {
       {/* ---------------- デッキ保存時のサムネイル選択モーダル ---------------- */}
       {isThumbnailModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 cursor-default"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 cursor-default overscroll-contain"
           onClick={() => !deckSaving && setIsThumbnailModalOpen(false)}
         >
           <div
@@ -3911,7 +3938,7 @@ export default function DMApp() {
       {/* ---------------- 保存済みデッキ一覧モーダル ---------------- */}
       {isDeckListOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 cursor-default"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 cursor-default overscroll-contain"
           onClick={() => setIsDeckListOpen(false)}
         >
           <div
@@ -4935,7 +4962,7 @@ export default function DMApp() {
               </button>
             </div>
 
-            <div className={`${activeTab === 'deck' ? 'order-1 lg:order-2 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1.5 lg:pb-6' : ''} space-y-3`}>
+            <div className={`${activeTab === 'deck' ? `order-1 lg:order-2 lg:flex-1 lg:min-h-0 ${isAnyModalOpen ? 'lg:overflow-hidden' : 'lg:overflow-y-auto'} lg:pr-1.5 lg:pb-6` : ''} space-y-3`}>
             {loading ? (
               <div className="text-center py-24 text-slate-400 font-medium text-sm flex items-center justify-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
@@ -5111,7 +5138,7 @@ export default function DMApp() {
           {activeTab === 'deck' && (
             <aside className="order-1 lg:order-2 lg:col-span-6 lg:h-full lg:min-h-0">
               <div className="bg-white rounded-3xl border border-slate-200/80 shadow-md p-4 flex flex-col lg:h-full overflow-hidden">
-                <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
+                <div className={`flex-1 min-h-0 ${isAnyModalOpen ? 'overflow-hidden' : 'overflow-y-auto'} pr-1 space-y-3`}>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 w-1/2 sm:w-3/5">
@@ -5686,7 +5713,7 @@ export default function DMApp() {
       {/* ---------------- カード詳細モーダル ---------------- */}
       {activeCard && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 cursor-default"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 cursor-default overscroll-contain"
           onClick={() => setActiveCard(null)}
         >
           <div
