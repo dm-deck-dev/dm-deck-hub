@@ -5763,18 +5763,47 @@ export default function DMApp() {
                   </p>
                 </div>
 
-                <div className="bg-slate-50 p-2.5 rounded-2xl border flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700">所有枚数:</span>
-                  <div className="flex items-center gap-1.5">
-                    <button type="button" onClick={() => updateCount(activeCard.id, -1)} className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100">
-                      <Minus className="h-3.5 w-3.5" />
-                    </button>
-                    <span className="w-8 text-center text-xs font-black">{counts[activeCard.id] || 0}</span>
-                    <button type="button" onClick={() => updateCount(activeCard.id, 1)} className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100">
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
+                {activeTab === 'deck' ? (
+                  <div className="bg-emerald-50/70 p-2.5 rounded-2xl border border-emerald-200/80 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-emerald-900">デッキ投入枚数:</span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white text-slate-500 border border-slate-200">
+                        所持: {counts[activeCard.id] || 0}枚
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => removeCardFromDeck(activeCard.id)}
+                        disabled={(deckCards[activeCard.id] || 0) === 0}
+                        className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="w-8 text-center text-xs font-black text-emerald-700">{deckCards[activeCard.id] || 0}</span>
+                      <button
+                        type="button"
+                        onClick={() => addCardToDeck(activeCard)}
+                        className="h-7 w-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-slate-50 p-2.5 rounded-2xl border flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">所有枚数:</span>
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={() => updateCount(activeCard.id, -1)} className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100 cursor-pointer">
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="w-8 text-center text-xs font-black">{counts[activeCard.id] || 0}</span>
+                      <button type="button" onClick={() => updateCount(activeCard.id, 1)} className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-100 cursor-pointer">
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -5784,12 +5813,15 @@ export default function DMApp() {
                   <h4 className="text-xs font-extrabold text-slate-700">
                     同名の別バージョン（全{activeCardVersions.length}種）
                   </h4>
-                  <span className="text-[10px] text-slate-400">クリックで詳細・所持数を切替</span>
+                  <span className="text-[10px] text-slate-400">
+                    {activeTab === 'deck' ? 'クリックで詳細・投入数を切替' : 'クリックで詳細・所持数を切替'}
+                  </span>
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
                   {activeCardVersions.map((ver) => {
                     const isCurrent = ver.id === activeCard.id;
                     const verOwned = counts[ver.id] || 0;
+                    const verInDeck = deckCards[ver.id] || 0;
                     return (
                       <button
                         key={ver.id}
@@ -5818,11 +5850,19 @@ export default function DMApp() {
                               表示中
                             </span>
                           )}
-                          <span className={`absolute bottom-1 right-1 px-1.5 py-0.5 rounded font-bold text-[9px] shadow-sm ${
-                            verOwned > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-800/75 text-white'
-                          }`}>
-                            所持:{verOwned}
-                          </span>
+                          {activeTab === 'deck' ? (
+                            <span className={`absolute bottom-1 right-1 px-1.5 py-0.5 rounded font-bold text-[9px] shadow-sm ${
+                              verInDeck > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-800/75 text-white'
+                            }`}>
+                              投入:{verInDeck}
+                            </span>
+                          ) : (
+                            <span className={`absolute bottom-1 right-1 px-1.5 py-0.5 rounded font-bold text-[9px] shadow-sm ${
+                              verOwned > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-800/75 text-white'
+                            }`}>
+                              所持:{verOwned}
+                            </span>
+                          )}
                         </div>
                         <div className="px-0.5">
                           <div className="flex items-center justify-between gap-1">
