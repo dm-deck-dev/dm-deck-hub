@@ -1150,6 +1150,14 @@ export default function DMApp() {
     return (name || "").replace(/[\s\u3000]+/g, " ").trim();
   }, []);
 
+  // カード詳細モーダル用：同名の別バージョン一覧（現在選択中を含む全バージョン）
+  const activeCardVersions = useMemo(() => {
+    if (!activeCard) return [];
+    const targetName = normalizeDeckCardName(activeCard.name);
+    if (!targetName) return [];
+    return cards.filter((c) => normalizeDeckCardName(c.name) === targetName);
+  }, [activeCard, cards, normalizeDeckCardName]);
+
   const deckCardNameCounts = useMemo(() => {
     const map: Record<string, number> = {};
     const cardById = new Map(cards.map((c) => [c.id, c]));
@@ -5769,6 +5777,69 @@ export default function DMApp() {
                 </div>
               </div>
             </div>
+
+            {activeCardVersions.length > 1 && (
+              <div className="mt-5 pt-4 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-2.5">
+                  <h4 className="text-xs font-extrabold text-slate-700">
+                    同名の別バージョン（全{activeCardVersions.length}種）
+                  </h4>
+                  <span className="text-[10px] text-slate-400">クリックで詳細・所持数を切替</span>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+                  {activeCardVersions.map((ver) => {
+                    const isCurrent = ver.id === activeCard.id;
+                    const verOwned = counts[ver.id] || 0;
+                    return (
+                      <button
+                        key={ver.id}
+                        type="button"
+                        onClick={() => setActiveCard(ver)}
+                        className={`text-left rounded-xl border p-1.5 transition flex flex-col gap-1 cursor-pointer ${
+                          isCurrent
+                            ? 'border-blue-500 bg-blue-50/70 ring-2 ring-blue-500/20'
+                            : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="relative aspect-[5/7] w-full bg-slate-100 rounded-lg overflow-hidden">
+                          {ver.image_url ? (
+                            <img
+                              src={ver.image_url}
+                              alt={`${ver.name} (${ver.set_name || ''})`}
+                              className="w-full h-full object-contain"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400">
+                              画像なし
+                            </div>
+                          )}
+                          {isCurrent && (
+                            <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-blue-600 text-white font-extrabold text-[9px] shadow">
+                              表示中
+                            </span>
+                          )}
+                          <span className={`absolute bottom-1 right-1 px-1.5 py-0.5 rounded font-bold text-[9px] shadow-sm ${
+                            verOwned > 0 ? 'bg-emerald-600 text-white' : 'bg-slate-800/75 text-white'
+                          }`}>
+                            所持:{verOwned}
+                          </span>
+                        </div>
+                        <div className="px-0.5">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-slate-100 text-slate-700 shrink-0">
+                              {ver.rarity || '-'}
+                            </span>
+                            <span className="text-[9px] text-slate-400 truncate">
+                              {ver.set_name || 'プロモ/不明'}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
